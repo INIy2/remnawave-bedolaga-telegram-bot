@@ -302,6 +302,161 @@ async def show_service_rules(callback: types.CallbackQuery, db_user: User, db: A
     await callback.answer()
 
 
+def _build_profile_connect_button(texts, subscription):
+    """Кнопка «🔌 Подключиться» по той же логике, что экран «Готово ✅» после триала.
+
+    Ветвление по CONNECT_BUTTON_MODE идентично activate_trial. Возвращает None,
+    если для текущего режима нет ссылки/URL.
+    """
+    from app.utils.subscription_utils import get_display_subscription_link
+
+    subscription_link = get_display_subscription_link(subscription) if subscription else None
+    connect_mode = settings.CONNECT_BUTTON_MODE
+    label = texts.t('CONNECT_BUTTON', '🔌 Подключиться')
+
+    if connect_mode == 'miniapp_subscription':
+        if not subscription_link:
+            return None
+        return types.InlineKeyboardButton(text=label, web_app=types.WebAppInfo(url=subscription_link))
+    if connect_mode == 'miniapp_custom':
+        if not settings.MINIAPP_CUSTOM_URL:
+            return None
+        return types.InlineKeyboardButton(text=label, web_app=types.WebAppInfo(url=settings.MINIAPP_CUSTOM_URL))
+    if connect_mode == 'link':
+        if not subscription_link:
+            return None
+        return types.InlineKeyboardButton(text=label, url=subscription_link)
+    if connect_mode == 'happ_cryptolink':
+        if not subscription_link:
+            return None
+        callback = 'subscription_connect' if settings.is_multi_tariff_enabled() else 'open_subscription_link'
+        return types.InlineKeyboardButton(text=label, callback_data=callback)
+    return types.InlineKeyboardButton(text=label, callback_data='subscription_connect')
+
+
+async def show_profile(callback: types.CallbackQuery, db_user: User, db: AsyncSession):
+    """FreekVPN: экран «Профиль» — сводка аккаунта из уже существующих данных.
+
+    Никакой новой бизнес-логики: только собираем поля пользователя/подписки.
+    """
+    if db_user is None:
+        texts = get_texts(settings.DEFAULT_LANGUAGE)
+        await callback.answer(
+            texts.t('USER_NOT_FOUND_ERROR', 'Ошибка: пользователь не найден.'),
+            show_alert=True,
+        )
+        return
+
+    texts = get_texts(db_user.language)
+    subscription = getattr(db_user, 'subscription', None)
+    now_utc = datetime.now(UTC)
+
+    # Тариф (в режиме тарифов — имя из БД; для триала без тарифа — «Тестовый период»)
+    tariff_name = '—'
+    if subscription:
+        tariff_id = getattr(subscription, 'tariff_id', None)
+        if tariff_id:
+            try:
+                from app.database.crud.tariff import get_tariff_by_id
+
+                tariff = await get_tariff_by_id(db, tariff_id)
+                if tariff:
+                    tariff_name = tariff.name
+            except Exception as tariff_error:
+                logger.debug('Не удалось загрузить тариф для профиля', error=tariff_error)
+        if tariff_name == '—' and getattr(subscription, 'is_trial', False):
+            tariff_name = texts.t('PROFILE_TARIFF_TRIAL', 'Тестовый период')
+
+    # Статус подписки + дата окончания
+    if not subscription:
+        status_text = texts.t('SUBSCRIPTION_STATUS_NONE', 'Нет подписки')
+        expire_text = '—'
+    else:
+        end_date = getattr(subscription, 'end_date', None)
+        sub_status = (subscription.status or '').lower()
+        if sub_status == 'limited':
+            status_text = texts.t('SUBSCRIPTION_STATUS_LIMITED', 'Трафик исчерпан')
+        elif sub_status == 'disabled':
+            status_text = texts.t('SUBSCRIPTION_STATUS_DISABLED', 'Приостановлена')
+        elif sub_status == 'expired' or (end_date and end_date <= now_utc):
+            status_text = texts.t('SUBSCRIPTION_STATUS_EXPIRED', 'Истекла')
+        elif sub_status == 'active' and end_date and end_date > now_utc:
+            status_text = (
+                texts.t('SUBSCRIPTION_STATUS_TRIAL', 'Тестовая')
+                if getattr(subscription, 'is_trial', False)
+                else texts.t('SUBSCRIPTION_STATUS_ACTIVE', 'Активна')
+            )
+        else:
+            status_text = texts.t('SUBSCRIPTION_STATUS_UNKNOWN', 'Неизвестно')
+        expire_text = format_local_datetime(end_date, '%d.%m.%Y') if end_date else '—'
+
+    balance_text = texts.format_price(db_user.balance_kopeks or 0)
+    registered_text = format_local_datetime(db_user.created_at, '%d.%m.%Y') if db_user.created_at else '—'
+
+    profile_text = texts.t(
+        'PROFILE_SCREEN',
+        '<b>Freek VPN</b>\n'
+        'ID: {telegram_id}\n'
+        'Тариф: {tariff}\n'
+        'Статус: {status}\n'
+        'Действует до: {expire}\n'
+        'Баланс: {balance}\n'
+        'В сервисе с: {registered}',
+    ).format(
+        telegram_id=db_user.telegram_id,
+        tariff=html.escape(str(tariff_name)),
+        status=html.escape(str(status_text)),
+        expire=html.escape(str(expire_text)),
+        balance=balance_text,
+        registered=html.escape(str(registered_text)),
+    )
+
+    rows: list[list[types.InlineKeyboardButton]] = []
+
+    # 🔌 Подключиться — отдельным рядом, только при активной подписке.
+    # Кнопка строится по той же логике, что экран «Готово ✅» после триала.
+    subscription_active = bool(
+        subscription
+        and (subscription.status or '').lower() in {'active', 'limited'}
+        and getattr(subscription, 'end_date', None)
+        and subscription.end_date > now_utc
+    )
+    if subscription_active:
+        connect_button = _build_profile_connect_button(texts, subscription)
+        if connect_button:
+            rows.append([connect_button])
+
+    rows.append(
+        [
+            types.InlineKeyboardButton(
+                text=texts.t('PROFILE_CHANGE_TARIFF_BUTTON', '🔄 Сменить тариф'),
+                callback_data='tariff_switch',
+            )
+        ]
+    )
+    rows.append(
+        [
+            types.InlineKeyboardButton(
+                text=texts.t('PROFILE_PAYMENT_HISTORY_BUTTON', '🧾 История платежей'),
+                callback_data='balance_history',
+            )
+        ]
+    )
+    rows.append(
+        [
+            types.InlineKeyboardButton(
+                text=texts.t('MENU_BACK_BUTTON', '← Назад'),
+                callback_data='back_to_menu',
+            )
+        ]
+    )
+
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=rows)
+
+    await edit_or_answer_photo(callback, profile_text, keyboard, parse_mode='HTML')
+    await callback.answer()
+
+
 async def show_info_menu(
     callback: types.CallbackQuery,
     db_user: User,
@@ -325,6 +480,9 @@ async def show_info_menu(
     prompt = texts.t('MENU_INFO_PROMPT', 'Выберите раздел:')
     caption = f'{header}\n\n{prompt}' if prompt else header
 
+    # FreekVPN: экран «Инфо» — до 4 пунктов, каждый в своём ряду. Пункт
+    # показывается только если соответствующий раздел включён (гейтинг по флагам),
+    # чтобы не открывать пустой экран, если документ ещё не заведён на проде.
     privacy_enabled = is_visible_in_bot(
         settings.PRIVACY_POLICY_DISPLAY_MODE
     ) and await PrivacyPolicyService.is_policy_enabled(db, db_user.language)
@@ -332,26 +490,61 @@ async def show_info_menu(
         settings.PUBLIC_OFFER_DISPLAY_MODE
     ) and await PublicOfferService.is_offer_enabled(db, db_user.language)
     faq_enabled = is_visible_in_bot(settings.FAQ_DISPLAY_MODE) and await FaqService.is_enabled(db, db_user.language)
-    rules_enabled = is_visible_in_bot(settings.SERVICE_RULES_DISPLAY_MODE)
-    promo_groups_available = await has_auto_assign_promo_groups(db)
+    try:
+        support_enabled = SupportSettingsService.is_support_menu_enabled()
+    except Exception:
+        support_enabled = settings.SUPPORT_MENU_ENABLED
 
-    bot_pages = await get_all_info_pages(db, visible_in='bot')
-    custom_pages = [
-        (page.id, _resolve_info_page_title(page, db_user.language)) for page in bot_pages if page.replaces_tab is None
-    ]
+    info_rows: list[list[types.InlineKeyboardButton]] = []
+    if public_offer_enabled:
+        info_rows.append(
+            [
+                types.InlineKeyboardButton(
+                    text=texts.t('INFO_MENU_OFFER', '📄 Публичная оферта'),
+                    callback_data='menu_public_offer',
+                )
+            ]
+        )
+    if privacy_enabled:
+        info_rows.append(
+            [
+                types.InlineKeyboardButton(
+                    text=texts.t('INFO_MENU_PRIVACY', '🔒 Политика конфиденциальности'),
+                    callback_data='menu_privacy_policy',
+                )
+            ]
+        )
+    if faq_enabled:
+        info_rows.append(
+            [
+                types.InlineKeyboardButton(
+                    text=texts.t('INFO_MENU_FAQ', '❓ Частые вопросы'),
+                    callback_data='menu_faq',
+                )
+            ]
+        )
+    if support_enabled:
+        info_rows.append(
+            [
+                types.InlineKeyboardButton(
+                    text=texts.t('INFO_MENU_SUPPORT', '💬 Поддержка'),
+                    callback_data='menu_support',
+                )
+            ]
+        )
+    info_rows.append(
+        [
+            types.InlineKeyboardButton(
+                text=texts.t('MENU_BACK_BUTTON', '← Назад'),
+                callback_data='back_to_menu',
+            )
+        ]
+    )
 
     await edit_or_answer_photo(
         callback=callback,
         caption=caption,
-        keyboard=get_info_menu_keyboard(
-            language=db_user.language,
-            show_privacy_policy=privacy_enabled,
-            show_public_offer=public_offer_enabled,
-            show_faq=faq_enabled,
-            show_promo_groups=promo_groups_available,
-            show_rules=rules_enabled,
-            custom_pages=custom_pages,
-        ),
+        keyboard=types.InlineKeyboardMarkup(inline_keyboard=info_rows),
         parse_mode='HTML',
     )
     await callback.answer()
@@ -1680,6 +1873,11 @@ def register_handlers(dp: Dispatcher):
     )
 
     dp.callback_query.register(show_service_rules, F.data == 'menu_rules')
+
+    dp.callback_query.register(
+        show_profile,
+        F.data == 'menu_profile',
+    )
 
     dp.callback_query.register(
         show_info_menu,

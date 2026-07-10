@@ -2,6 +2,7 @@ import hashlib
 import json
 from html import escape as html_escape
 from pathlib import Path
+from urllib.parse import quote
 
 import qrcode
 import structlog
@@ -47,201 +48,56 @@ async def show_referral_info(callback: types.CallbackQuery, db_user: User, db: A
 
     bot_username = (await callback.bot.get_me()).username
     bot_referral_link = settings.get_bot_referral_link(db_user.referral_code, bot_username)
-    cabinet_referral_link = settings.get_cabinet_referral_link(db_user.referral_code)
 
+    # FreekVPN: упрощённый экран рефералов. Механику начислений не трогаем —
+    # только визуально/текстово переработан вывод уже существующих данных.
     referral_text = (
-        texts.t('REFERRAL_PROGRAM_TITLE', '👥 <b>Реферальная программа</b>')
+        texts.t('REFERRAL_INVITE_HEADER', 'Приглашай друзей — получай бонусы за каждого 🎉')
         + '\n\n'
-        + texts.t('REFERRAL_STATS_HEADER', '📊 <b>Ваша статистика:</b>')
+        + texts.t('REFERRAL_INVITED_LINE', 'Приглашено: {count}').format(count=summary['invited_count'])
         + '\n'
-        + texts.t(
-            'REFERRAL_STATS_INVITED',
-            '• Приглашено пользователей: <b>{count}</b>',
-        ).format(count=summary['invited_count'])
-        + '\n'
-        + texts.t(
-            'REFERRAL_STATS_FIRST_TOPUPS',
-            '• Сделали первое пополнение: <b>{count}</b>',
-        ).format(count=summary['paid_referrals_count'])
-        + '\n'
-        + texts.t(
-            'REFERRAL_STATS_ACTIVE',
-            '• Активных рефералов: <b>{count}</b>',
-        ).format(count=summary['active_referrals_count'])
-        + '\n'
-        + texts.t(
-            'REFERRAL_STATS_CONVERSION',
-            '• Конверсия: <b>{rate}%</b>',
-        ).format(rate=summary['conversion_rate'])
-        + '\n'
-        + texts.t(
-            'REFERRAL_STATS_TOTAL_EARNED',
-            '• Заработано всего: <b>{amount}</b>',
-        ).format(amount=texts.format_price(summary['total_earned_kopeks']))
-        + '\n'
-        + texts.t(
-            'REFERRAL_STATS_MONTH_EARNED',
-            '• За последний месяц: <b>{amount}</b>',
-        ).format(amount=texts.format_price(summary['month_earned_kopeks']))
-        + '\n\n'
-        + texts.t('REFERRAL_REWARDS_HEADER', '🎁 <b>Как работают награды:</b>')
-    )
-
-    if settings.REFERRAL_FIRST_TOPUP_BONUS_KOPEKS > 0:
-        referral_text += '\n' + texts.t(
-            'REFERRAL_REWARD_NEW_USER',
-            '• Новый пользователь получает: <b>{bonus}</b> при первом пополнении от <b>{minimum}</b>',
-        ).format(
-            bonus=texts.format_price(settings.REFERRAL_FIRST_TOPUP_BONUS_KOPEKS),
-            minimum=texts.format_price(settings.REFERRAL_MINIMUM_TOPUP_KOPEKS),
-        )
-
-    if settings.REFERRAL_INVITER_BONUS_KOPEKS > 0:
-        referral_text += '\n' + texts.t(
-            'REFERRAL_REWARD_INVITER',
-            '• Вы получаете при первом пополнении реферала: <b>{bonus}</b>',
-        ).format(bonus=texts.format_price(settings.REFERRAL_INVITER_BONUS_KOPEKS))
-
-    if settings.REFERRAL_MAX_COMMISSION_PAYMENTS > 0:
-        commission_line = texts.t(
-            'REFERRAL_REWARD_COMMISSION_LIMITED',
-            '• Комиссия с первых {max_payments} пополнений реферала: <b>{percent}%</b>',
-        ).format(
-            percent=get_effective_referral_commission_percent(db_user),
-            max_payments=settings.REFERRAL_MAX_COMMISSION_PAYMENTS,
-        )
-    else:
-        commission_line = texts.t(
-            'REFERRAL_REWARD_COMMISSION',
-            '• Комиссия с каждого пополнения реферала: <b>{percent}%</b>',
-        ).format(percent=get_effective_referral_commission_percent(db_user))
-
-    referral_text += '\n' + commission_line + '\n\n'
-
-    # Show bot link
-    referral_text += (
-        texts.t('REFERRAL_BOT_LINK_TITLE', '🤖 <b>Ссылка на бота:</b>') + f'\n{html_escape(bot_referral_link)}\n'
-    )
-
-    # Show cabinet link if configured
-    if cabinet_referral_link:
-        referral_text += (
-            '\n'
-            + texts.t('REFERRAL_CABINET_LINK_TITLE', '🌐 <b>Ссылка на кабинет:</b>')
-            + f'\n{html_escape(cabinet_referral_link)}\n'
-        )
-
-    referral_text += (
-        '\n'
-        + texts.t('REFERRAL_CODE_TITLE', '🆔 <b>Ваш код:</b> <code>{code}</code>').format(
-            code=html_escape(str(db_user.referral_code or ''))
+        + texts.t('REFERRAL_EARNED_LINE', 'Заработано: {amount}').format(
+            amount=texts.format_price(summary['total_earned_kopeks'])
         )
         + '\n\n'
+        + f'<code>{html_escape(bot_referral_link)}</code>'
     )
 
-    if summary['recent_earnings']:
-        meaningful_earnings = [earning for earning in summary['recent_earnings'][:5] if earning['amount_kopeks'] > 0]
-
-        if meaningful_earnings:
-            referral_text += (
-                texts.t(
-                    'REFERRAL_RECENT_EARNINGS_HEADER',
-                    '💰 <b>Последние начисления:</b>',
-                )
-                + '\n'
-            )
-            for earning in meaningful_earnings[:3]:
-                reason_text = {
-                    'referral_first_topup': texts.t(
-                        'REFERRAL_EARNING_REASON_FIRST_TOPUP',
-                        '🎉 Первое пополнение',
-                    ),
-                    'referral_commission_topup': texts.t(
-                        'REFERRAL_EARNING_REASON_COMMISSION_TOPUP',
-                        '💰 Комиссия с пополнения',
-                    ),
-                    'referral_commission': texts.t(
-                        'REFERRAL_EARNING_REASON_COMMISSION_PURCHASE',
-                        '💰 Комиссия с покупки',
-                    ),
-                }.get(earning['reason'], earning['reason'])
-
-                referral_text += (
-                    texts.t(
-                        'REFERRAL_RECENT_EARNINGS_ITEM',
-                        '• {reason}: <b>{amount}</b> от {referral_name}',
-                    ).format(
-                        reason=reason_text,
-                        amount=texts.format_price(earning['amount_kopeks']),
-                        referral_name=html_escape(str(earning['referral_name'] or '')),
-                    )
-                    + '\n'
-                )
-            referral_text += '\n'
-
-    if summary['earnings_by_type']:
-        referral_text += (
-            texts.t(
-                'REFERRAL_EARNINGS_BY_TYPE_HEADER',
-                '📈 <b>Доходы по типам:</b>',
-            )
-            + '\n'
-        )
-
-        if 'referral_first_topup' in summary['earnings_by_type']:
-            data = summary['earnings_by_type']['referral_first_topup']
-            if data['total_amount_kopeks'] > 0:
-                referral_text += (
-                    texts.t(
-                        'REFERRAL_EARNINGS_FIRST_TOPUPS',
-                        '• Бонусы за первые пополнения: <b>{count}</b> ({amount})',
-                    ).format(
-                        count=data['count'],
-                        amount=texts.format_price(data['total_amount_kopeks']),
-                    )
-                    + '\n'
-                )
-
-        if 'referral_commission_topup' in summary['earnings_by_type']:
-            data = summary['earnings_by_type']['referral_commission_topup']
-            if data['total_amount_kopeks'] > 0:
-                referral_text += (
-                    texts.t(
-                        'REFERRAL_EARNINGS_TOPUPS',
-                        '• Комиссии с пополнений: <b>{count}</b> ({amount})',
-                    ).format(
-                        count=data['count'],
-                        amount=texts.format_price(data['total_amount_kopeks']),
-                    )
-                    + '\n'
-                )
-
-        if 'referral_commission' in summary['earnings_by_type']:
-            data = summary['earnings_by_type']['referral_commission']
-            if data['total_amount_kopeks'] > 0:
-                referral_text += (
-                    texts.t(
-                        'REFERRAL_EARNINGS_PURCHASES',
-                        '• Комиссии с покупок: <b>{count}</b> ({amount})',
-                    ).format(
-                        count=data['count'],
-                        amount=texts.format_price(data['total_amount_kopeks']),
-                    )
-                    + '\n'
-                )
-
-        referral_text += '\n'
-
-    referral_text += texts.t(
-        'REFERRAL_INVITE_FOOTER',
-        '📢 Приглашайте друзей и зарабатывайте!',
+    share_text = texts.t(
+        'REFERRAL_SHARE_TEXT',
+        'Подключайся к Freek VPN — быстрый VPN, который работает в России 🚀',
+    )
+    share_url = (
+        'https://t.me/share/url?url='
+        + quote(bot_referral_link, safe='')
+        + '&text='
+        + quote(share_text, safe='')
     )
 
-    await edit_or_answer_photo(
-        callback,
-        referral_text,
-        get_referral_keyboard(db_user.language),
+    keyboard = types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                types.InlineKeyboardButton(
+                    text=texts.t('REFERRAL_COPY_LINK_BUTTON', '📋 Скопировать ссылку'),
+                    copy_text=types.CopyTextButton(text=bot_referral_link),
+                )
+            ],
+            [
+                types.InlineKeyboardButton(
+                    text=texts.t('REFERRAL_SHARE_BUTTON', '📤 Поделиться'),
+                    url=share_url,
+                )
+            ],
+            [
+                types.InlineKeyboardButton(
+                    text=texts.t('MENU_BACK_BUTTON', '← Назад'),
+                    callback_data='back_to_menu',
+                )
+            ],
+        ]
     )
+
+    await edit_or_answer_photo(callback, referral_text, keyboard, parse_mode='HTML')
     await callback.answer()
 
 
