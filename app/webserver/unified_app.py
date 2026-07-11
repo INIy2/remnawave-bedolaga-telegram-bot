@@ -320,7 +320,7 @@ def create_unified_app(
     async def happ_redirect(url: str = '') -> HTMLResponse:  # pragma: no cover - thin redirect endpoint
         subscription_link = (url or '').strip()
         happ_link: str | None = None
-        if subscription_link.lower().startswith(('http://', 'https://')):
+        if subscription_link.lower().startswith(('http://', 'https://', 'happ://')):
             happ_link = convert_subscription_link_to_happ_scheme(subscription_link)
 
         page, status_code = _render_happ_redirect_page(happ_link)

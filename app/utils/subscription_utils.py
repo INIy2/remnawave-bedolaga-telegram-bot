@@ -1,4 +1,4 @@
-from urllib.parse import quote, urlparse, urlunparse
+from urllib.parse import quote
 
 import structlog
 from sqlalchemy import func, select
@@ -90,18 +90,23 @@ def get_happ_cryptolink_redirect_link(subscription_link: str | None) -> str | No
 
 
 def convert_subscription_link_to_happ_scheme(subscription_link: str | None) -> str | None:
+    """Build a Happ deep link that imports the subscription.
+
+    Happ's documented import scheme (RemnaWave subscription-page app config) is
+    ``happ://add/<subscription_url>`` with the PLAIN https subscription URL. A
+    naive ``https``→``happ`` scheme swap (``happ://host/path``) produces a link
+    Happ opens but cannot import. A ``happ://…`` cryptolink (provided by the
+    panel when available) is already a valid deep link and is returned as-is.
+    """
     if not subscription_link:
         return None
 
-    parsed_link = urlparse(subscription_link)
-
-    if parsed_link.scheme.lower() == 'happ':
-        return subscription_link
-
-    if not parsed_link.scheme:
-        return subscription_link
-
-    return urlunparse(parsed_link._replace(scheme='happ'))
+    link = subscription_link.strip()
+    if link.lower().startswith('happ://'):
+        return link
+    if link.lower().startswith(('http://', 'https://')):
+        return f'happ://add/{link}'
+    return None
 
 
 def device_limit_needs_heal(value: int | None) -> bool:
