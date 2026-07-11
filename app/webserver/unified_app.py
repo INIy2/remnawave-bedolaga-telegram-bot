@@ -8,19 +8,81 @@ from typing import Any
 import structlog
 from aiogram import Bot, Dispatcher
 from fastapi import FastAPI, Response, status
-from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.cabinet.apple_iap import apple_iap_only_router
 from app.config import settings
 from app.services.disposable_email_service import disposable_email_service
 from app.services.payment_service import PaymentService
+from app.utils.subscription_utils import convert_subscription_link_to_happ_scheme
 from app.webapi.docs import add_redoc_endpoint
 
 from . import payments, telegram
 
 
 logger = structlog.get_logger(__name__)
+
+
+def _render_happ_redirect_page(happ_link: str | None) -> tuple[str, int]:
+    """Build the HTML page that bounces the browser into the Happ app.
+
+    Telegram inline-keyboard URL buttons only accept http/https/tg:// schemes,
+    so a one-tap "Подключиться" button cannot point at ``happ://`` directly.
+    Instead the button points at this https endpoint, which forwards to the
+    ``happ://`` scheme. iOS Safari and Telegram's in-app browser often refuse to
+    auto-open a custom scheme without a user gesture, so we attempt an automatic
+    redirect AND always render a prominent manual button as a fallback.
+
+    Returns ``(html, status_code)``.
+    """
+    import html as _html
+    import json as _json
+
+    if not happ_link:
+        page = (
+            '<!doctype html><html lang="ru"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            '<title>Ссылка недоступна</title></head>'
+            '<body style="font-family:sans-serif;text-align:center;padding:2rem;">'
+            '<h2>⚠️ Ссылка подписки недоступна</h2>'
+            '<p>Вернитесь в бота и откройте подключение заново.</p>'
+            '</body></html>'
+        )
+        return page, status.HTTP_400_BAD_REQUEST
+
+    href = _html.escape(happ_link, quote=True)
+    js_link = _json.dumps(happ_link)
+    page = f"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="0; url={href}">
+<title>Подключение через Happ</title>
+<style>
+  body {{ font-family: -apple-system, Segoe UI, Roboto, sans-serif; background:#111; color:#eee;
+         display:flex; min-height:100vh; margin:0; align-items:center; justify-content:center; }}
+  .card {{ text-align:center; padding:2rem; max-width:420px; }}
+  h1 {{ font-size:1.4rem; margin-bottom:.5rem; }}
+  p {{ color:#aaa; line-height:1.5; }}
+  a.btn {{ display:inline-block; margin-top:1.2rem; padding:.9rem 1.6rem; border-radius:12px;
+           background:#4c8bf5; color:#fff; text-decoration:none; font-weight:600; font-size:1.05rem; }}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🔗 Открываем Happ…</h1>
+  <p>Если приложение не открылось автоматически, нажмите кнопку ниже.</p>
+  <a class="btn" href="{href}">Открыть в Happ</a>
+</div>
+<script>
+  // Немедленная попытка открыть приложение по клику-эквиваленту.
+  window.location.replace({js_link});
+</script>
+</body>
+</html>"""
+    return page, status.HTTP_200_OK
 
 
 def _attach_docs_alias(app: FastAPI, docs_url: str | None) -> None:
@@ -245,6 +307,26 @@ def create_unified_app(
         return PlainTextResponse(
             content=token,
             media_type='text/plain; charset=utf-8',
+            headers={'Cache-Control': 'no-store'},
+        )
+
+    # Happ deep-link redirect. Telegram inline URL-кнопки не принимают
+    # схему happ://, поэтому кнопка «Подключиться» ведёт на этот https-роут,
+    # а он уже перебрасывает браузер в приложение Happ. Включается настройкой
+    # HAPP_CRYPTOLINK_REDIRECT_TEMPLATE (например
+    # https://<домен-бота>/happ?url={subscription_link}). Роут публичный:
+    # ссылка подписки приходит query-параметром, состояние не читаем.
+    @app.get('/happ', include_in_schema=False)
+    async def happ_redirect(url: str = '') -> HTMLResponse:  # pragma: no cover - thin redirect endpoint
+        subscription_link = (url or '').strip()
+        happ_link: str | None = None
+        if subscription_link.lower().startswith(('http://', 'https://')):
+            happ_link = convert_subscription_link_to_happ_scheme(subscription_link)
+
+        page, status_code = _render_happ_redirect_page(happ_link)
+        return HTMLResponse(
+            content=page,
+            status_code=status_code,
             headers={'Cache-Control': 'no-store'},
         )
 

@@ -55,6 +55,7 @@ from app.services.trial_activation_service import (
 )
 from app.services.user_cart_service import user_cart_service
 from app.utils.decorators import error_handler
+from app.utils.photo_message import edit_or_answer_photo
 
 
 logger = structlog.get_logger(__name__)
@@ -774,6 +775,101 @@ def _get_trial_payment_keyboard(language: str, can_pay_from_balance: bool = Fals
     return types.InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
+# Гайд подключения (FreekVPN) --------------------------------------------------
+
+# Путь к видео-инструкции. Пока готового видео нет — гайд показывается обычной
+# картинкой (логотипом) через общий хелпер edit_or_answer_photo. Когда видео
+# появится, положите файл сюда и верните отправку через answer_video (см.
+# _show_guide_screen ниже — там оставлен комментарий как вернуть видео).
+INSTALL_VIDEO_PATH = 'assets/gaid.mp4'
+
+# Платформы для ссылок скачивания Happ (порядок = порядок строк в тексте).
+# Ссылки берутся из HAPP_DOWNLOAD_LINK_* через settings.get_happ_download_link().
+_HAPP_DOWNLOAD_PLATFORMS = [
+    ('android', 'Android'),
+    ('ios', 'iOS'),
+    ('windows', 'Windows'),
+    ('macos', 'MacOS'),
+]
+
+
+async def _show_guide_screen(callback: types.CallbackQuery, caption: str, keyboard: types.InlineKeyboardMarkup) -> None:
+    """Показывает экран гайда картинкой (логотип) + инструкция в подписи.
+
+    Пока нет видео-инструкции — используем обычную картинку через общий хелпер
+    edit_or_answer_photo (тот же, что и остальные экраны меню: логотип, фоллбек на
+    текст при длинной подписи и т.п.).
+
+    Чтобы вернуть видео позже — вместо вызова edit_or_answer_photo отправьте
+    видео-сообщение: FSInputFile(INSTALL_VIDEO_PATH) через message.answer_video(...)
+    (см. историю git — прежняя реализация была здесь же).
+    """
+    await edit_or_answer_photo(callback, caption, keyboard, parse_mode='HTML')
+
+
+async def show_install_guide_devices(callback: types.CallbackQuery, db_user: User, db: AsyncSession):
+    """Экран «Подключиться»: видео + ссылки на скачивание Happ + моментальное подключение."""
+    texts = get_texts(db_user.language)
+
+    from app.utils.subscription_utils import (
+        convert_subscription_link_to_happ_scheme,
+        get_display_subscription_link,
+        get_happ_cryptolink_redirect_link,
+    )
+
+    subscription = getattr(db_user, 'subscription', None)
+    link = get_display_subscription_link(subscription) if subscription else None
+
+    lines = [texts.t('CONNECT_HAPP_TITLE', '🔗 <b>Подключение через Happ</b>'), '']
+
+    # Ссылки на скачивание Happ по платформам (текстом)
+    download_lines = [
+        f'{name}: <a href="{url}">скачать</a>'
+        for key, name in _HAPP_DOWNLOAD_PLATFORMS
+        if (url := settings.get_happ_download_link(key))
+    ]
+    if download_lines:
+        lines.append(texts.t('CONNECT_HAPP_DOWNLOAD', '<b>Скачиваем Happ:</b>'))
+        lines.extend(download_lines)
+        lines.append('')
+
+    # Моментальное подключение (открыть конфиг в Happ)
+    redirect_link = get_happ_cryptolink_redirect_link(link) if link else None
+    happ_scheme = convert_subscription_link_to_happ_scheme(link) if link else None
+    if happ_scheme and not redirect_link:
+        lines.append(texts.t('CONNECT_HAPP_OPEN_LINK', '🔓 <a href="{link}">Открыть ссылку в Happ</a>').format(link=happ_scheme))
+        lines.append('')
+
+    # Ручное копирование ссылки
+    if link:
+        lines.append(
+            texts.t(
+                'CONNECT_HAPP_COPY_HINT',
+                '💡 Если ссылка не открывается автоматически, скопируйте её вручную:',
+            )
+        )
+        lines.append(f'<blockquote expandable><code>{link}</code></blockquote>')
+
+    caption = '\n'.join(lines)
+
+    rows: list[list[types.InlineKeyboardButton]] = []
+    if redirect_link:
+        rows.append(
+            [types.InlineKeyboardButton(text=texts.t('CONNECT_HAPP_CONNECT_BTN', '🔌 Подключиться'), url=redirect_link)]
+        )
+    rows.append(
+        [
+            types.InlineKeyboardButton(
+                text=texts.t('BACK_TO_MAIN_MENU_BUTTON', '⬅️ В главное меню'),
+                callback_data='back_to_menu',
+            )
+        ]
+    )
+
+    await _show_guide_screen(callback, caption, types.InlineKeyboardMarkup(inline_keyboard=rows))
+    await callback.answer()
+
+
 async def activate_trial(callback: types.CallbackQuery, db_user: User, db: AsyncSession):
     from app.services.trial_activation_service import get_trial_activation_charge_amount
 
@@ -1112,18 +1208,11 @@ async def activate_trial(callback: types.CallbackQuery, db_user: User, db: Async
 
         if remnawave_user and subscription_link:
             if settings.is_happ_cryptolink_mode():
-                trial_success_text = (
-                    f'{texts.TRIAL_ACTIVATED}\n\n'
-                    + texts.t(
-                        'SUBSCRIPTION_HAPP_LINK_PROMPT',
-                        '🔒 Ссылка на подписку создана. Нажмите кнопку "Подключиться" ниже, чтобы открыть её в Happ.',
-                    )
-                    + '\n\n'
-                    + texts.t(
-                        'SUBSCRIPTION_IMPORT_INSTRUCTION_PROMPT',
-                        '📱 Нажмите кнопку ниже, чтобы получить инструкцию по настройке VPN на вашем устройстве',
-                    )
-                )
+                # FreekVPN: короткий экран "Готово ✅" после активации триала.
+                trial_success_text = texts.t(
+                    'TRIAL_READY_CONNECT',
+                    'Готово ✅\n\nВключили тебе {days} дней бесплатно. Осталось подключиться — жми кнопку ниже.',
+                ).format(days=settings.TRIAL_DURATION_DAYS)
             elif hide_subscription_link:
                 trial_success_text = (
                     f'{texts.TRIAL_ACTIVATED}\n\n'
@@ -1219,26 +1308,19 @@ async def activate_trial(callback: types.CallbackQuery, db_user: User, db: Async
                 )
                 connect_keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
             elif connect_mode == 'happ_cryptolink':
-                rows = [
-                    [
-                        InlineKeyboardButton(
-                            text=texts.t('CONNECT_BUTTON', '🔗 Подключиться'),
-                            callback_data='open_subscription_link',
-                        )
-                    ]
-                ]
-                happ_row = get_happ_download_button_row(texts)
-                if happ_row:
-                    rows.append(happ_row)
-                rows.append(
-                    [
-                        InlineKeyboardButton(
-                            text=texts.t('BACK_TO_MAIN_MENU_BUTTON', '⬅️ В главное меню'),
-                            callback_data='back_to_menu',
-                        )
+                # FreekVPN: экран "Готово ✅" — ровно одна зелёная кнопка "Подключиться",
+                # ведущая на экран гайда подключения (install_guide → show_install_guide_devices).
+                connect_keyboard = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(
+                                text=texts.t('CONNECT_BUTTON', '🔌 Подключиться'),
+                                callback_data='install_guide',
+                                style='success',
+                            )
+                        ],
                     ]
                 )
-                connect_keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
             else:
                 connect_keyboard = InlineKeyboardMarkup(
                     inline_keyboard=[
@@ -4133,6 +4215,8 @@ def register_handlers(dp: Dispatcher):
     dp.callback_query.register(show_trial_offer, F.data == 'menu_trial')
 
     dp.callback_query.register(activate_trial, F.data == 'trial_activate')
+
+    dp.callback_query.register(show_install_guide_devices, F.data == 'install_guide')
 
     # Хендлеры платного триала
     dp.callback_query.register(handle_trial_pay_with_balance, F.data == 'trial_pay_with_balance')

@@ -37,10 +37,15 @@ class SubscriptionStates(StatesGroup):
 
 class BalanceStates(StatesGroup):
     waiting_for_amount = State()
+    waiting_for_topup_amount = State()
     waiting_for_pal24_method = State()
     waiting_for_platega_method = State()
     waiting_for_stars_payment = State()
     waiting_for_support_request = State()
+
+
+class SupportRequestStates(StatesGroup):
+    waiting_for_message = State()
 
 
 class PromoCodeStates(StatesGroup):

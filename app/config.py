@@ -916,6 +916,9 @@ class Settings(BaseSettings):
     ETOPLATEZHI_CARD_DISPLAY_NAME: str = 'Карта (Etoplatezhi)'
 
     MAIN_MENU_MODE: str = 'default'  # 'default' | 'cabinet'
+    # URL кнопки "🌐 Сайт" в главном меню (обычная url-кнопка, открывает браузер).
+    # Пусто → кнопка не показывается. Позже можно заменить на WebApp-кнопку.
+    MAIN_MENU_SITE_URL: str = 'https://cabinetipn.duckdns.org'
     # Стиль кнопок Cabinet: primary (синий), success (зелёный), danger (красный), '' (по умолчанию для каждой секции)
     CABINET_BUTTON_STYLE: str = ''
     CONNECT_BUTTON_MODE: str = 'miniapp_subscription'

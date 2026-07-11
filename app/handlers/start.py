@@ -1977,6 +1977,32 @@ async def complete_registration_from_callback(callback: types.CallbackQuery, sta
         except Exception as e:
             logger.error('Ошибка при отправке приветственного сообщения', error=e)
     else:
+        # FreekVPN: даже без welcome-текста новому юзеру, имеющему право на триал,
+        # показываем экран активации пробного периода — иначе триал недоступен нигде.
+        _subs_trial = getattr(user, 'subscriptions', None) or []
+        _has_sub_trial = any(s.is_active for s in _subs_trial)
+        if not _has_sub_trial and settings.TRIAL_DURATION_DAYS > 0 and not user.is_trial_already_used():
+            _texts_trial = get_texts(user.language)
+            trial_prompt = _texts_trial.t(
+                'POST_REGISTRATION_TRIAL_PROMPT',
+                '🎁 <b>Тебе доступно {days} дней бесплатно</b>\n'
+                'Нажми кнопку ниже, чтобы активировать пробную подписку.',
+            ).format(days=settings.TRIAL_DURATION_DAYS)
+            try:
+                if pinned_message and pinned_message.send_before_menu:
+                    await _send_pinned_message(callback.bot, db, user, pinned_message)
+                await callback.message.answer(
+                    trial_prompt,
+                    reply_markup=get_post_registration_keyboard(user.language),
+                    parse_mode='HTML',
+                )
+                if pinned_message and not pinned_message.send_before_menu:
+                    await _send_pinned_message(callback.bot, db, user, pinned_message)
+                logger.info('✅ Экран активации триала показан (без welcome)', telegram_id=user.telegram_id)
+            except Exception as trial_err:
+                logger.error('Ошибка показа экрана активации триала', error=trial_err)
+            return
+
         logger.info(
             'ℹ️ Приветственные сообщения отключены, показываем главное меню для пользователя',
             telegram_id=user.telegram_id,
@@ -2333,6 +2359,32 @@ async def complete_registration(message: types.Message, state: FSMContext, db: A
         except Exception as e:
             logger.error('Ошибка при отправке приветственного сообщения', error=e)
     else:
+        # FreekVPN: даже без welcome-текста новому юзеру, имеющему право на триал,
+        # показываем экран активации пробного периода — иначе триал недоступен нигде
+        # (в 5-кнопочном меню кнопки триала нет).
+        _subs_trial = getattr(user, 'subscriptions', None) or []
+        _has_sub_trial = any(s.is_active for s in _subs_trial)
+        if not _has_sub_trial and settings.TRIAL_DURATION_DAYS > 0 and not user.is_trial_already_used():
+            trial_prompt = texts.t(
+                'POST_REGISTRATION_TRIAL_PROMPT',
+                '🎁 <b>Тебе доступно {days} дней бесплатно</b>\n'
+                'Нажми кнопку ниже, чтобы активировать пробную подписку.',
+            ).format(days=settings.TRIAL_DURATION_DAYS)
+            try:
+                if pinned_message and pinned_message.send_before_menu:
+                    await _send_pinned_message(message.bot, db, user, pinned_message)
+                await message.answer(
+                    trial_prompt,
+                    reply_markup=get_post_registration_keyboard(user.language),
+                    parse_mode='HTML',
+                )
+                if pinned_message and not pinned_message.send_before_menu:
+                    await _send_pinned_message(message.bot, db, user, pinned_message)
+                logger.info('✅ Экран активации триала показан (без welcome)', telegram_id=user.telegram_id)
+            except Exception as trial_err:
+                logger.error('Ошибка показа экрана активации триала', error=trial_err)
+            return
+
         logger.info(
             'ℹ️ Приветственные сообщения отключены, показываем главное меню для пользователя',
             telegram_id=user.telegram_id,

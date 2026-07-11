@@ -52,7 +52,9 @@ async def show_referral_info(callback: types.CallbackQuery, db_user: User, db: A
     # FreekVPN: упрощённый экран рефералов. Механику начислений не трогаем —
     # только визуально/текстово переработан вывод уже существующих данных.
     referral_text = (
-        texts.t('REFERRAL_INVITE_HEADER', 'Приглашай друзей — получай бонусы за каждого 🎉')
+        texts.t('REFERRAL_TEMPORARILY_DISABLED_NOTICE', '⚠️🚧 <b>ВРЕМЕННО НЕ РАБОТАЕТ!!!</b> 🚧⚠️')
+        + '\n\n'
+        + texts.t('REFERRAL_INVITE_HEADER', 'Приглашай друзей — получай бонусы за каждого 🎉')
         + '\n\n'
         + texts.t('REFERRAL_INVITED_LINE', 'Приглашено: {count}').format(count=summary['invited_count'])
         + '\n'

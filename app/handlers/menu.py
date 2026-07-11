@@ -390,25 +390,22 @@ async def show_profile(callback: types.CallbackQuery, db_user: User, db: AsyncSe
             status_text = texts.t('SUBSCRIPTION_STATUS_UNKNOWN', 'Неизвестно')
         expire_text = format_local_datetime(end_date, '%d.%m.%Y') if end_date else '—'
 
-    balance_text = texts.format_price(db_user.balance_kopeks or 0)
-    registered_text = format_local_datetime(db_user.created_at, '%d.%m.%Y') if db_user.created_at else '—'
+    user_name = (db_user.full_name or '').strip() or 'Пользователь'
 
     profile_text = texts.t(
         'PROFILE_SCREEN',
-        '<b>Freek VPN</b>\n'
-        'ID: {telegram_id}\n'
-        'Тариф: {tariff}\n'
-        'Статус: {status}\n'
-        'Действует до: {expire}\n'
-        'Баланс: {balance}\n'
-        'В сервисе с: {registered}',
+        '👤 <b>{name}</b>\n'
+        '\n'
+        '<blockquote><b>Тариф:</b> {tariff}\n'
+        '<b>Статус:</b> {status}\n'
+        '<b>Действует до:</b> {expire}\n'
+        '<b>ID:</b> <code>{telegram_id}</code></blockquote>',
     ).format(
+        name=html.escape(user_name),
         telegram_id=db_user.telegram_id,
         tariff=html.escape(str(tariff_name)),
         status=html.escape(str(status_text)),
         expire=html.escape(str(expire_text)),
-        balance=balance_text,
-        registered=html.escape(str(registered_text)),
     )
 
     rows: list[list[types.InlineKeyboardButton]] = []
@@ -528,7 +525,7 @@ async def show_info_menu(
             [
                 types.InlineKeyboardButton(
                     text=texts.t('INFO_MENU_SUPPORT', '💬 Поддержка'),
-                    callback_data='menu_support',
+                    callback_data='support_request',
                 )
             ]
         )
@@ -1431,6 +1428,96 @@ async def handle_back_to_menu(callback: types.CallbackQuery, state: FSMContext, 
     await callback.answer()
 
 
+async def _build_main_menu_status_card(user, texts, db: AsyncSession) -> str:
+    """Карточка главного меню FreekVPN (стиль «ваш доступ»).
+
+    Содержит: бренд-заголовок, ссылку подключения, остаток/устройства/трафик и
+    промо-строку рефералов. Профиль как отдельный экран убран — эти данные тут.
+
+    Число ПОДКЛЮЧЁННЫХ устройств не показываем (только лимит): кэша в БД нет, а
+    live-запрос к Remnawave на каждый рендер меню создаёт лишнюю нагрузку на панель.
+    """
+    from app.utils.subscription_utils import get_display_subscription_link
+
+    subscription = getattr(user, 'subscription', None)
+    now_utc = datetime.now(UTC)
+
+    lines: list[str] = [texts.t('MAIN_MENU_ACCESS_HEADER', '<b>Ваш доступ к Freek VPN</b>'), '']
+
+    # Ссылка подключения
+    link = get_display_subscription_link(subscription) if subscription else None
+    if link and not settings.should_hide_subscription_link():
+        lines.append(texts.t('MAIN_MENU_CONNECT_LINK_TITLE', '<b>Ссылка для подключения:</b>'))
+        lines.append(link)
+        lines.append('')
+
+    # Осталось
+    is_active = bool(
+        subscription
+        and (subscription.actual_status or '').lower() in {'active', 'trial'}
+        and getattr(subscription, 'end_date', None)
+        and subscription.end_date > now_utc
+    )
+    if is_active:
+        days_left = max(0, (subscription.end_date - now_utc).days)
+        remaining = texts.t('MAIN_MENU_REMAINING_DAYS', '{days} дн.').format(days=days_left)
+    elif subscription is not None:
+        remaining = texts.t('MAIN_MENU_REMAINING_EXPIRED', 'Подписка истекла')
+    else:
+        remaining = texts.t('MAIN_MENU_REMAINING_NONE', 'Подписка не активна')
+
+    # Устройства «N из лимита». Число подключённых берём live-запросом к панели
+    # (по просьбе — ради визуала). При ошибке/недоступности панели — только лимит.
+    device_limit = (subscription.device_limit if subscription else 0) or 0
+    devices_text = texts.t('MAIN_MENU_DEVICES_LIMIT_ONLY', 'до {limit}').format(limit=device_limit)
+    if subscription is not None:
+        try:
+            from app.handlers.subscription.devices import get_current_devices_count
+
+            count = await get_current_devices_count(user, subscription)
+            if count and count != '—':
+                devices_text = texts.t('MAIN_MENU_DEVICES_COUNT', '{count} из {limit}').format(
+                    count=count, limit=device_limit
+                )
+        except Exception as devices_error:
+            logger.debug('Не удалось получить число устройств для меню', error=devices_error)
+
+    # Трафик
+    if subscription:
+        limit = subscription.traffic_limit_gb or 0
+        used = subscription.traffic_used_gb or 0.0
+        used_str = f'{used:.1f}'.rstrip('0').rstrip('.') or '0'
+        if limit and limit > 0:
+            traffic = f'{used_str} / {limit} ГБ'
+        else:
+            traffic = texts.t('MAIN_MENU_TRAFFIC_UNLIMITED', 'Без ограничений')
+    else:
+        traffic = '—'
+
+    # Статы в blockquote (как выделенный блок в профиле)
+    lines.append(
+        texts.t(
+            'MAIN_MENU_STATS_BLOCK',
+            '<blockquote><b>Осталось:</b> {remaining}\n'
+            '<b>Устройства:</b> {devices}\n'
+            '<b>Трафик:</b> {traffic}</blockquote>',
+        ).format(remaining=remaining, devices=devices_text, traffic=traffic)
+    )
+
+    # Промо рефералов — тем же blockquote-стилем
+    if settings.is_referral_program_enabled():
+        lines.append('')
+        lines.append(
+            texts.t(
+                'MAIN_MENU_REFERRAL_PROMO',
+                '<blockquote>Пригласил друга, друг купил подписку — ты получил <b>халявные дни</b>.\n'
+                'Ссылки в разделе «Рефералы».</blockquote>',
+            )
+        )
+
+    return '\n'.join(lines)
+
+
 def _get_subscription_status(user: User, texts, is_daily_tariff: bool = False) -> str:
     subscription = getattr(user, 'subscription', None)
     if not subscription:
@@ -1573,48 +1660,12 @@ async def _get_multi_tariff_status(user, texts, db: AsyncSession) -> tuple[str, 
 
 
 async def get_main_menu_text(user, texts, db: AsyncSession):
-    from app.config import settings
-
-    # Multi-tariff: show summary of all subscriptions
-    if settings.is_multi_tariff_enabled():
-        subscriptions_status, tariff_info_block = await _get_multi_tariff_status(user, texts, db)
-
-        base_text = texts.MAIN_MENU.format(
-            user_name=html.escape(user.full_name or ''),
-            subscription_status=subscriptions_status,
-        )
-
-        if tariff_info_block:
-            action_prompt_text = texts.t('MAIN_MENU_ACTION_PROMPT', 'Выберите действие:')
-            if action_prompt_text in base_text:
-                base_text = base_text.replace(action_prompt_text, f'{tariff_info_block}\n\n{action_prompt_text}')
-    else:
-        # Single-tariff mode: legacy behavior
-        tariff = None
-        is_daily_tariff = False
-        tariff_info_block = ''
-
-        subscription = getattr(user, 'subscription', None)
-        if settings.is_tariffs_mode() and subscription and subscription.tariff_id:
-            try:
-                from app.database.crud.tariff import get_tariff_by_id
-
-                tariff = await get_tariff_by_id(db, subscription.tariff_id)
-                if tariff:
-                    is_daily_tariff = getattr(tariff, 'is_daily', False)
-                    tariff_info_block = f'\n📦 Тариф: {html.escape(tariff.name)}'
-            except Exception as e:
-                logger.debug('Не удалось загрузить тариф для главного меню', error=e)
-
-        base_text = texts.MAIN_MENU.format(
-            user_name=html.escape(user.full_name or ''),
-            subscription_status=_get_subscription_status(user, texts, is_daily_tariff),
-        )
-
-        if tariff_info_block:
-            action_prompt_text = texts.t('MAIN_MENU_ACTION_PROMPT', 'Выберите действие:')
-            if action_prompt_text in base_text:
-                base_text = base_text.replace(action_prompt_text, f'{tariff_info_block}\n\n{action_prompt_text}')
+    # FreekVPN redesign: единая карточка статуса вместо старого блока подписки.
+    subscription_status = await _build_main_menu_status_card(user, texts, db)
+    base_text = texts.MAIN_MENU.format(
+        user_name=html.escape(user.full_name or ''),
+        subscription_status=subscription_status,
+    )
 
     action_prompt = texts.t('MAIN_MENU_ACTION_PROMPT', 'Выберите действие:')
 

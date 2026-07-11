@@ -16,6 +16,7 @@ from app.keyboards.inline import (
     get_balance_keyboard,
     get_pagination_keyboard,
     get_payment_methods_keyboard,
+    get_topup_quick_amounts_keyboard,
 )
 from app.localization.texts import get_texts
 from app.states import BalanceStates
@@ -282,11 +283,13 @@ async def show_balance_history(callback: types.CallbackQuery, db_user: User, db:
             total_unique += 1
 
     if not unique_transactions:
-        await callback.message.edit_text('📊 История операций пуста', reply_markup=get_back_keyboard(db_user.language))
+        await callback.message.edit_text(
+            '🧾 История платежей пуста', reply_markup=get_back_keyboard(db_user.language)
+        )
         await callback.answer()
         return
 
-    text = '📊 <b>История операций</b>\n\n'
+    text = '🧾 <b>История платежей</b>\n\n'
 
     for transaction in unique_transactions:
         is_credit = transaction.type in CREDIT_TRANSACTION_TYPES
@@ -294,12 +297,12 @@ async def show_balance_history(callback: types.CallbackQuery, db_user: User, db:
         amount_text = (
             f'+{texts.format_price(transaction.amount_kopeks)}'
             if is_credit
-            else f'-{texts.format_price(abs(transaction.amount_kopeks))}'
+            else f'−{texts.format_price(abs(transaction.amount_kopeks))}'
         )
 
-        text += f'{emoji} {amount_text}\n'
-        text += f'📝 {html.escape(transaction.description or "")}\n'
-        text += f'📅 {transaction.created_at.strftime("%d.%m.%Y %H:%M")}\n\n'
+        description = html.escape(transaction.description or '')
+        text += f'{emoji} {description}  <b>{amount_text}</b>\n'
+        text += f'<i>{transaction.created_at.strftime("%d.%m.%Y %H:%M")}</i>\n\n'
 
     keyboard = []
     total_pages = (total_unique + TRANSACTIONS_PER_PAGE - 1) // TRANSACTIONS_PER_PAGE
@@ -322,10 +325,50 @@ async def handle_balance_history_pagination(callback: types.CallbackQuery, db_us
     await show_balance_history(callback, db_user, db, page)
 
 
+async def _edit_or_answer(message, text: str, keyboard) -> None:
+    """Редактирует сообщение, при невозможности — присылает новое."""
+    if isinstance(message, InaccessibleMessage):
+        await message.answer(text, reply_markup=keyboard, parse_mode='HTML')
+        return
+    try:
+        await message.edit_text(text, reply_markup=keyboard, parse_mode='HTML')
+    except TelegramBadRequest:
+        try:
+            await message.edit_caption(text, reply_markup=keyboard, parse_mode='HTML')
+        except TelegramBadRequest:
+            try:
+                await message.delete()
+            except TelegramBadRequest:
+                pass
+            await message.answer(text, reply_markup=keyboard, parse_mode='HTML')
+
+
+def _payment_methods_content(language: str, amount_kopeks: int):
+    """Собирает текст и клавиатуру экрана способов оплаты для конкретной суммы."""
+    from app.utils.payment_utils import get_payment_methods_text
+
+    texts = get_texts(language)
+    text = get_payment_methods_text(language)
+    if amount_kopeks > 0:
+        text = f'💳 <b>Пополнение на {texts.format_price(amount_kopeks)}</b>\n\n' + text
+    keyboard = get_payment_methods_keyboard(amount_kopeks, language)
+    return text, keyboard
+
+
+def _topup_amount_selection_content(db_user: User):
+    """Текст и клавиатура экрана выбора суммы пополнения (быстрые суммы)."""
+    texts = get_texts(db_user.language)
+    text = (
+        '💰 <b>Пополнение баланса</b>\n\n'
+        f'Текущий баланс: {texts.format_price(db_user.balance_kopeks or 0)}\n\n'
+        'Выберите сумму пополнения:'
+    )
+    return text, get_topup_quick_amounts_keyboard(db_user.language)
+
+
 @error_handler
 async def show_payment_methods(callback: types.CallbackQuery, db_user: User, db: AsyncSession, state: FSMContext):
     from app.config import settings
-    from app.utils.payment_utils import get_payment_methods_text
 
     texts = get_texts(db_user.language)
 
@@ -346,9 +389,8 @@ async def show_payment_methods(callback: types.CallbackQuery, db_user: User, db:
         await callback.answer()
         return
 
-    payment_text = get_payment_methods_text(db_user.language)
-
-    # Проверяем сохранённую корзину для автоподстановки суммы пополнения
+    # Сумма из сохранённой корзины (сценарий «нехватка средств» — сумма уже известна,
+    # выбор суммы пропускаем и сразу показываем способы оплаты).
     amount_kopeks = 0
     try:
         from app.services.user_cart_service import user_cart_service
@@ -361,29 +403,73 @@ async def show_payment_methods(callback: types.CallbackQuery, db_user: User, db:
     except Exception:
         pass
 
-    full_text = payment_text
+    if amount_kopeks > 0:
+        text, keyboard = _payment_methods_content(db_user.language, amount_kopeks)
+    else:
+        text, keyboard = _topup_amount_selection_content(db_user)
 
-    keyboard = get_payment_methods_keyboard(amount_kopeks, db_user.language)
+    await _edit_or_answer(callback.message, text, keyboard)
+    await callback.answer()
 
-    # Если сообщение недоступно, отправляем новое
-    if isinstance(callback.message, InaccessibleMessage):
-        await callback.message.answer(full_text, reply_markup=keyboard, parse_mode='HTML')
-        await callback.answer()
+
+@error_handler
+async def handle_topup_pick(callback: types.CallbackQuery, db_user: User, state: FSMContext):
+    """Выбор быстрой суммы пополнения → экран способов оплаты для этой суммы."""
+    try:
+        amount_kopeks = int(callback.data.split(':', 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer('❌ Некорректная сумма', show_alert=True)
+        return
+
+    if amount_kopeks <= 0:
+        await callback.answer('❌ Некорректная сумма', show_alert=True)
+        return
+
+    await state.clear()
+    text, keyboard = _payment_methods_content(db_user.language, amount_kopeks)
+    await _edit_or_answer(callback.message, text, keyboard)
+    await callback.answer()
+
+
+@error_handler
+async def handle_topup_other(callback: types.CallbackQuery, db_user: User, state: FSMContext):
+    """Запрос произвольной суммы пополнения."""
+    await state.set_state(BalanceStates.waiting_for_topup_amount)
+    await _edit_or_answer(
+        callback.message,
+        '💰 <b>Пополнение баланса</b>\n\nВведите сумму пополнения в рублях (например, 250):',
+        get_back_keyboard(db_user.language, callback_data='balance_topup'),
+    )
+    await callback.answer()
+
+
+@error_handler
+async def process_topup_custom_amount(message: types.Message, db_user: User, state: FSMContext):
+    """Обрабатывает ввод произвольной суммы → экран способов оплаты."""
+    texts = get_texts(db_user.language)
+    back_kb = get_back_keyboard(db_user.language, callback_data='balance_topup')
+
+    if not message.text:
+        await message.answer(texts.INVALID_AMOUNT, reply_markup=back_kb)
         return
 
     try:
-        await callback.message.edit_text(full_text, reply_markup=keyboard, parse_mode='HTML')
-    except TelegramBadRequest:
-        try:
-            await callback.message.edit_caption(full_text, reply_markup=keyboard, parse_mode='HTML')
-        except TelegramBadRequest:
-            try:
-                await callback.message.delete()
-            except TelegramBadRequest:
-                pass
-            await callback.message.answer(full_text, reply_markup=keyboard, parse_mode='HTML')
+        amount_rubles = float(message.text.strip().replace(',', '.'))
+    except ValueError:
+        await message.answer(texts.INVALID_AMOUNT, reply_markup=back_kb)
+        return
 
-    await callback.answer()
+    if amount_rubles < 1:
+        await message.answer('Минимальная сумма пополнения: 1 ₽', reply_markup=back_kb)
+        return
+    if amount_rubles > 50000:
+        await message.answer('Максимальная сумма пополнения: 50,000 ₽', reply_markup=back_kb)
+        return
+
+    amount_kopeks = int(round(amount_rubles * 100))
+    await state.clear()
+    text, keyboard = _payment_methods_content(db_user.language, amount_kopeks)
+    await message.answer(text, reply_markup=keyboard, parse_mode='HTML')
 
 
 @error_handler
@@ -686,6 +772,10 @@ def register_balance_handlers(dp: Dispatcher):
     dp.callback_query.register(handle_balance_history_pagination, F.data.startswith('balance_history_page_'))
 
     dp.callback_query.register(show_payment_methods, F.data == 'balance_topup')
+
+    dp.callback_query.register(handle_topup_pick, F.data.startswith('topup_pick:'))
+    dp.callback_query.register(handle_topup_other, F.data == 'topup_other')
+    dp.message.register(process_topup_custom_amount, BalanceStates.waiting_for_topup_amount)
 
     from .stars import start_stars_payment
 
