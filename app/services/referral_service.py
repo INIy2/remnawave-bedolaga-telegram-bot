@@ -9,6 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database.crud.referral import create_referral_earning, get_commission_payment_count, get_user_campaign_id
+from app.database.crud.subscription import (
+    create_trial_subscription,
+    extend_subscription,
+    get_subscription_by_user_id,
+)
 from app.database.crud.user import add_user_balance, get_user_by_id
 from app.database.models import ReferralEarning, TransactionType, User
 from app.services.notification_delivery_service import (
@@ -1036,4 +1041,112 @@ async def process_referral_purchase(
         import traceback
 
         logger.error('Полный traceback', format_exc=traceback.format_exc())
+        return False
+
+
+async def process_referral_subscription_reward(
+    db: AsyncSession,
+    buyer: User,
+    purchase_amount_kopeks: int,
+    bot: Bot = None,
+) -> bool:
+    """Начисляет реферальные дни при покупке подписки рефералом.
+
+    Реферер получает REFERRAL_REWARD_REFERRER_DAYS дней, реферал —
+    REFERRAL_REWARD_REFERRED_DAYS дней. Разово за реферала (маркер-строка
+    ReferralEarning с reason='referral_days_reward'). Вызывать ПОСЛЕ финализации
+    подписки покупателя (иначе +дни перезапишутся логикой покупки). Идемпотентна —
+    безопасна к повторным вызовам. Ошибки начисления проглатываются, покупку не роняют.
+    """
+    try:
+        if not settings.is_referral_program_enabled():
+            return False
+
+        referrer_id = getattr(buyer, 'referred_by_id', None)
+        if not referrer_id or referrer_id == buyer.id:
+            return False
+
+        if purchase_amount_kopeks < settings.REFERRAL_PURCHASE_THRESHOLD_KOPEKS:
+            return False
+
+        from sqlalchemy import select as _select
+
+        existing = await db.execute(
+            _select(ReferralEarning.id)
+            .where(
+                ReferralEarning.user_id == referrer_id,
+                ReferralEarning.referral_id == buyer.id,
+                ReferralEarning.reason == 'referral_days_reward',
+            )
+            .limit(1)
+        )
+        if existing.scalar_one_or_none() is not None:
+            logger.info('Реферальная награда днями уже начислена, пропуск', buyer_id=buyer.id, referrer_id=referrer_id)
+            return False
+
+        referrer = await get_user_by_id(db, referrer_id)
+        if not referrer:
+            logger.error('Реферер не найден при начислении дней', referrer_id=referrer_id)
+            return False
+
+        referrer_days = settings.REFERRAL_REWARD_REFERRER_DAYS
+        referred_days = settings.REFERRAL_REWARD_REFERRED_DAYS
+
+        buyer_sub = await get_subscription_by_user_id(db, buyer.id)
+        if buyer_sub:
+            await extend_subscription(db, buyer_sub, referred_days)
+
+        referrer_sub = await get_subscription_by_user_id(db, referrer_id)
+        if referrer_sub:
+            await extend_subscription(db, referrer_sub, referrer_days)
+        else:
+            await create_trial_subscription(db, referrer_id, duration_days=referrer_days)
+
+        campaign_id = await get_user_campaign_id(db, buyer.id)
+        await create_referral_earning(
+            db=db,
+            user_id=referrer_id,
+            referral_id=buyer.id,
+            amount_kopeks=0,
+            reason='referral_days_reward',
+            campaign_id=campaign_id,
+        )
+
+        logger.info(
+            '🎁 Реферальные дни начислены',
+            buyer_id=buyer.id,
+            referrer_id=referrer_id,
+            referrer_days=referrer_days,
+            referred_days=referred_days,
+        )
+
+        if bot:
+            try:
+                await send_referral_notification(
+                    bot,
+                    referrer.telegram_id,
+                    (
+                        f'🎁 <b>Реферальный бонус!</b>\n\n'
+                        f'Твой друг <b>{html.escape(buyer.full_name)}</b> оформил подписку — '
+                        f'тебе начислено <b>+{referrer_days} дн.</b> VPN 🚀'
+                    ),
+                    user=referrer,
+                    referral_name=buyer.full_name,
+                )
+                await send_referral_notification(
+                    bot,
+                    buyer.telegram_id,
+                    (
+                        f'🎁 <b>Бонус за покупку!</b>\n\n'
+                        f'Как приглашённому другу тебе начислено <b>+{referred_days} дн.</b> VPN 🚀'
+                    ),
+                    user=buyer,
+                )
+            except Exception as notify_error:
+                logger.error('Ошибка отправки уведомления о реф-днях', notify_error=notify_error)
+
+        return True
+
+    except Exception as e:
+        logger.error('Ошибка начисления реферальных дней', error=e, buyer_id=getattr(buyer, 'id', None))
         return False
