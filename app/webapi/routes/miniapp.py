@@ -6742,6 +6742,18 @@ async def purchase_tariff_endpoint(
 
     await db.refresh(user)
 
+    try:
+        from app.bot_factory import create_bot
+        from app.services.referral_service import process_referral_subscription_reward
+
+        ref_bot = create_bot()
+        try:
+            await process_referral_subscription_reward(db, user, price_kopeks, bot=ref_bot)
+        finally:
+            await ref_bot.session.close()
+    except Exception as ref_error:
+        logger.error('Ошибка начисления реф-дней после покупки тарифа (miniapp)', ref_error=ref_error)
+
     return MiniAppTariffPurchaseResponse(
         success=True,
         message=f"Тариф '{tariff.name}' успешно активирован",

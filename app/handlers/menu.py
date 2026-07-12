@@ -1905,6 +1905,13 @@ async def handle_activate_button(callback: types.CallbackQuery, db_user: User, d
                 show_alert=True,
             )
 
+        try:
+            from app.services.referral_service import process_referral_subscription_reward
+
+            await process_referral_subscription_reward(db, db_user, best_price, bot=callback.bot)
+        except Exception as ref_error:
+            logger.error('Ошибка начисления реф-дней после активации', ref_error=ref_error)
+
     except Exception as e:
         user_id_display = db_user.telegram_id or db_user.email or f'#{db_user.id}'
         logger.error('Ошибка автоматической активации для', user_id_display=user_id_display, error=e)

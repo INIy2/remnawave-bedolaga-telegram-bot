@@ -1246,6 +1246,13 @@ async def handle_custom_confirm(
 
         await state.clear()
 
+        try:
+            from app.services.referral_service import process_referral_subscription_reward
+
+            await process_referral_subscription_reward(db, db_user, total_price, bot=callback.bot)
+        except Exception as ref_error:
+            logger.error('Ошибка начисления реф-дней после покупки', ref_error=ref_error)
+
         traffic_display = format_traffic(traffic_limit)
 
         await callback.message.edit_text(
@@ -1845,6 +1852,13 @@ async def confirm_tariff_purchase(
 
     await state.clear()
 
+    try:
+        from app.services.referral_service import process_referral_subscription_reward
+
+        await process_referral_subscription_reward(db, db_user, final_price, bot=callback.bot)
+    except Exception as ref_error:
+        logger.error('Ошибка начисления реф-дней после покупки', ref_error=ref_error)
+
     traffic = format_traffic(tariff.traffic_limit_gb)
 
     await callback.message.edit_text(
@@ -2136,6 +2150,13 @@ async def confirm_daily_tariff_purchase(
         logger.error('Ошибка очистки корзины', error=e)
 
     await state.clear()
+
+    try:
+        from app.services.referral_service import process_referral_subscription_reward
+
+        await process_referral_subscription_reward(db, db_user, final_daily_price, bot=callback.bot)
+    except Exception as ref_error:
+        logger.error('Ошибка начисления реф-дней после покупки', ref_error=ref_error)
 
     traffic = format_traffic(tariff.traffic_limit_gb)
 
@@ -2724,6 +2745,13 @@ async def confirm_tariff_extend(
             logger.error('Ошибка очистки корзины', error=e)
 
         await state.clear()
+
+        try:
+            from app.services.referral_service import process_referral_subscription_reward
+
+            await process_referral_subscription_reward(db, db_user, final_price, bot=callback.bot)
+        except Exception as ref_error:
+            logger.error('Ошибка начисления реф-дней после покупки', ref_error=ref_error)
 
         traffic = format_traffic(tariff.traffic_limit_gb)
 
@@ -3430,6 +3458,13 @@ async def confirm_tariff_switch(
             logger.error('Ошибка очистки корзины', error=e)
 
         await state.clear()
+
+        try:
+            from app.services.referral_service import process_referral_subscription_reward
+
+            await process_referral_subscription_reward(db, db_user, final_price, bot=callback.bot)
+        except Exception as ref_error:
+            logger.error('Ошибка начисления реф-дней после покупки', ref_error=ref_error)
 
         traffic = format_traffic(tariff.traffic_limit_gb)
 
