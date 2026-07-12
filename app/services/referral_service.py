@@ -632,40 +632,22 @@ async def process_referral_registration(db: AsyncSession, new_user_id: int, refe
             logger.debug('Не удалось записать конкурсную регистрацию', exc=exc)
 
         if bot:
-            commission_percent = get_effective_referral_commission_percent(referrer)
+            referrer_days = settings.REFERRAL_REWARD_REFERRER_DAYS
+            referred_days = settings.REFERRAL_REWARD_REFERRED_DAYS
+            threshold_rub = settings.REFERRAL_PURCHASE_THRESHOLD_KOPEKS // 100
+
             referral_notification = (
                 f'🎉 <b>Добро пожаловать!</b>\n\n'
-                f'Вы перешли по реферальной ссылке пользователя <b>{html.escape(referrer.full_name)}</b>!'
+                f'Ты перешёл по ссылке пользователя <b>{html.escape(referrer.full_name)}</b>.\n\n'
+                f'💎 Оформи подписку от {threshold_rub} ₽ — получишь <b>+{referred_days} дн.</b> VPN в подарок!'
             )
-            if settings.REFERRAL_FIRST_TOPUP_BONUS_KOPEKS > 0:
-                referral_notification += (
-                    f'\n\n💰 При первом пополнении от {settings.format_price(settings.REFERRAL_MINIMUM_TOPUP_KOPEKS)} '
-                    f'вы получите бонус {settings.format_price(settings.REFERRAL_FIRST_TOPUP_BONUS_KOPEKS)}!'
-                )
             await send_referral_notification(bot, new_user.telegram_id, referral_notification, user=new_user)
 
             inviter_notification = (
                 f'👥 <b>Новый реферал!</b>\n\n'
-                f'По вашей ссылке зарегистрировался пользователь <b>{html.escape(new_user.full_name)}</b>!\n\n'
-                f'💰 Когда он пополнит баланс от {settings.format_price(settings.REFERRAL_MINIMUM_TOPUP_KOPEKS)}, '
+                f'По твоей ссылке зарегистрировался <b>{html.escape(new_user.full_name)}</b>.\n\n'
+                f'🎁 Когда он оформит подписку от {threshold_rub} ₽ — тебе начислим <b>+{referrer_days} дн.</b> VPN.'
             )
-            if settings.REFERRAL_INVITER_BONUS_KOPEKS > 0 and commission_percent > 0:
-                inviter_notification += (
-                    f'вы получите {settings.format_price(settings.REFERRAL_INVITER_BONUS_KOPEKS)} + '
-                    f'{commission_percent}% от суммы пополнения.\n\n'
-                )
-            elif settings.REFERRAL_INVITER_BONUS_KOPEKS > 0:
-                inviter_notification += (
-                    f'вы получите {settings.format_price(settings.REFERRAL_INVITER_BONUS_KOPEKS)}.\n\n'
-                )
-            elif commission_percent > 0:
-                inviter_notification += f'вы получите {commission_percent}% от суммы.\n\n'
-            else:
-                inviter_notification += 'вы получите уведомление.\n\n'
-            if commission_percent > 0:
-                inviter_notification += (
-                    f'📈 С каждого последующего пополнения вы будете получать {commission_percent}% комиссии.'
-                )
             await send_referral_notification(
                 bot, referrer.telegram_id, inviter_notification, user=referrer, referral_name=new_user.full_name
             )
