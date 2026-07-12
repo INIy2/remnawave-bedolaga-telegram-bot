@@ -49,18 +49,27 @@ async def show_referral_info(callback: types.CallbackQuery, db_user: User, db: A
     bot_username = (await callback.bot.get_me()).username
     bot_referral_link = settings.get_bot_referral_link(db_user.referral_code, bot_username)
 
-    # FreekVPN: упрощённый экран рефералов. Механику начислений не трогаем —
-    # только визуально/текстово переработан вывод уже существующих данных.
+    referrer_days = settings.REFERRAL_REWARD_REFERRER_DAYS
+    referred_days = settings.REFERRAL_REWARD_REFERRED_DAYS
+    threshold_rub = settings.REFERRAL_PURCHASE_THRESHOLD_KOPEKS // 100
+    qualified = summary.get('qualified_count', 0)
+    earned_days = qualified * referrer_days
+
     referral_text = (
-        texts.t('REFERRAL_TEMPORARILY_DISABLED_NOTICE', '⚠️🚧 <b>ВРЕМЕННО НЕ РАБОТАЕТ!!!</b> 🚧⚠️')
+        texts.t('REFERRAL_INVITE_HEADER', '👥 Приглашай друзей — получай дни VPN 🎁')
         + '\n\n'
-        + texts.t('REFERRAL_INVITE_HEADER', 'Приглашай друзей — получай бонусы за каждого 🎉')
+        + texts.t(
+            'REFERRAL_DAYS_RULES',
+            'За каждого друга, который оформит подписку от {threshold} ₽:\n'
+            '• ты получишь +{referrer} дн.\n'
+            '• друг получит +{referred} дн.',
+        ).format(threshold=threshold_rub, referrer=referrer_days, referred=referred_days)
         + '\n\n'
         + texts.t('REFERRAL_INVITED_LINE', 'Приглашено: {count}').format(count=summary['invited_count'])
         + '\n'
-        + texts.t('REFERRAL_EARNED_LINE', 'Заработано: {amount}').format(
-            amount=texts.format_price(summary['total_earned_kopeks'])
-        )
+        + texts.t('REFERRAL_QUALIFIED_LINE', 'Оформили подписку: {count}').format(count=qualified)
+        + '\n'
+        + texts.t('REFERRAL_EARNED_DAYS_LINE', 'Тебе начислено: {days} дн.').format(days=earned_days)
         + '\n\n'
         + f'<code>{html_escape(bot_referral_link)}</code>'
     )
