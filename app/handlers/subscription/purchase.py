@@ -2919,6 +2919,13 @@ async def confirm_purchase(callback: types.CallbackQuery, state: FSMContext, db_
     if purchase_completed:
         await clear_subscription_checkout_draft(db_user.id)
 
+        try:
+            from app.services.referral_service import process_referral_subscription_reward
+
+            await process_referral_subscription_reward(db, db_user, final_price, bot=callback.bot)
+        except Exception as ref_error:
+            logger.error('Ошибка начисления реф-дней после покупки', ref_error=ref_error)
+
     await state.clear()
     await callback.answer()
 

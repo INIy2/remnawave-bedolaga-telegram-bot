@@ -5624,6 +5624,18 @@ async def subscription_purchase_endpoint(
             )
         )
 
+    try:
+        from app.bot_factory import create_bot
+        from app.services.referral_service import process_referral_subscription_reward
+
+        ref_bot = create_bot()
+        try:
+            await process_referral_subscription_reward(db, context.user, pricing.final_total, bot=ref_bot)
+        finally:
+            await ref_bot.session.close()
+    except Exception as ref_error:
+        logger.error('Ошибка начисления реф-дней после покупки (miniapp)', ref_error=ref_error)
+
     balance_label = settings.format_price(getattr(user, 'balance_kopeks', 0))
 
     return MiniAppSubscriptionPurchaseResponse(

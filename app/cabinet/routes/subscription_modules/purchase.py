@@ -540,6 +540,18 @@ async def submit_purchase(
         except Exception as yconv_err:
             logger.debug('yandex_conv purchase hook failed (non-fatal)', user_id=user.id, error=str(yconv_err))
 
+        try:
+            from app.bot_factory import create_bot
+            from app.services.referral_service import process_referral_subscription_reward
+
+            ref_bot = create_bot()
+            try:
+                await process_referral_subscription_reward(db, context.user, pricing.final_total, bot=ref_bot)
+            finally:
+                await ref_bot.session.close()
+        except Exception as ref_error:
+            logger.error('Ошибка начисления реф-дней после покупки (cabinet)', ref_error=ref_error)
+
         return {
             'success': True,
             'message': result['message'],

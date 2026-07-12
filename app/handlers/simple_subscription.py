@@ -674,6 +674,13 @@ async def handle_simple_subscription_pay_with_balance(
         except Exception as e:
             logger.error('Ошибка отправки уведомления админам о покупке', error=e)
 
+        try:
+            from app.services.referral_service import process_referral_subscription_reward
+
+            await process_referral_subscription_reward(db, db_user, price_kopeks, bot=callback.bot)
+        except Exception as ref_error:
+            logger.error('Ошибка начисления реф-дней после покупки', ref_error=ref_error)
+
         await state.clear()
         await callback.answer()
 
@@ -2421,6 +2428,13 @@ async def confirm_simple_subscription_purchase(
             )
         except Exception as e:
             logger.error('Ошибка отправки уведомления админам о покупке', error=e)
+
+        try:
+            from app.services.referral_service import process_referral_subscription_reward
+
+            await process_referral_subscription_reward(db, db_user, price_kopeks, bot=callback.bot)
+        except Exception as ref_error:
+            logger.error('Ошибка начисления реф-дней после покупки', ref_error=ref_error)
 
         await state.clear()
         await callback.answer()
