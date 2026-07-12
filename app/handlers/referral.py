@@ -60,7 +60,7 @@ async def show_referral_info(callback: types.CallbackQuery, db_user: User, db: A
         + '\n\n'
         + texts.t(
             'REFERRAL_DAYS_RULES',
-            'За каждого друга, который оформит подписку от {threshold} ₽:\n'
+            'За каждого друга, который оформит подписку от {threshold} ₽:\n'
             '• ты получишь +{referrer} дн.\n'
             '• друг получит +{referred} дн.',
         ).format(threshold=threshold_rub, referrer=referrer_days, referred=referred_days)
@@ -71,7 +71,7 @@ async def show_referral_info(callback: types.CallbackQuery, db_user: User, db: A
         + '\n'
         + texts.t('REFERRAL_EARNED_DAYS_LINE', 'Тебе начислено: {days} дн.').format(days=earned_days)
         + '\n\n'
-        + f'<code>{html_escape(bot_referral_link)}</code>'
+        + f'<blockquote>{html_escape(bot_referral_link)}</blockquote>'
     )
 
     share_text = texts.t(
@@ -89,13 +89,13 @@ async def show_referral_info(callback: types.CallbackQuery, db_user: User, db: A
         inline_keyboard=[
             [
                 types.InlineKeyboardButton(
-                    text=texts.t('REFERRAL_COPY_LINK_BUTTON', '📋 Скопировать ссылку'),
+                    text=texts.t('REFERRAL_COPY_LINK_BUTTON', 'Скопировать ссылку'),
                     copy_text=types.CopyTextButton(text=bot_referral_link),
                 )
             ],
             [
                 types.InlineKeyboardButton(
-                    text=texts.t('REFERRAL_SHARE_BUTTON', '📤 Поделиться'),
+                    text=texts.t('REFERRAL_SHARE_BUTTON', 'Поделиться'),
                     url=share_url,
                 )
             ],
