@@ -176,6 +176,8 @@ async def get_user_referral_summary(db: AsyncSession, user_id: int) -> dict:
         )
         active_referrals_count = active_result.scalar() or 0
 
+        qualified_count = earnings_by_type.get('referral_days_reward', {}).get('count', 0)
+
         return {
             'invited_count': invited_count,
             'paid_referrals_count': paid_referrals_count,
@@ -185,6 +187,7 @@ async def get_user_referral_summary(db: AsyncSession, user_id: int) -> dict:
             'recent_earnings': recent_earnings,
             'earnings_by_type': earnings_by_type,
             'conversion_rate': round((paid_referrals_count / invited_count * 100) if invited_count > 0 else 0, 1),
+            'qualified_count': qualified_count,
         }
 
     except Exception as e:
