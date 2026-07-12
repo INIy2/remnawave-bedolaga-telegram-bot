@@ -289,9 +289,15 @@ class Settings(BaseSettings):
     TRAFFIC_RESET_BASE_PRICE: int = 0  # 0 = использовать PERIOD_PRICES[30]
 
     REFERRAL_MINIMUM_TOPUP_KOPEKS: int = 10000
-    REFERRAL_FIRST_TOPUP_BONUS_KOPEKS: int = 10000
-    REFERRAL_INVITER_BONUS_KOPEKS: int = 10000
-    REFERRAL_COMMISSION_PERCENT: int = 25
+    # FreekVPN: денежная реферальная механика отключена — заменена на дни подписки.
+    # Нули глушат бонусы/комиссию (код гейтит на > 0), не удаляя логику. Обратимо.
+    REFERRAL_FIRST_TOPUP_BONUS_KOPEKS: int = 0
+    REFERRAL_INVITER_BONUS_KOPEKS: int = 0
+    REFERRAL_COMMISSION_PERCENT: int = 0
+    # Реферальная награда днями подписки (новая механика).
+    REFERRAL_REWARD_REFERRER_DAYS: int = 3       # дней пригласившему
+    REFERRAL_REWARD_REFERRED_DAYS: int = 7       # дней приглашённому
+    REFERRAL_PURCHASE_THRESHOLD_KOPEKS: int = 10000  # порог покупки подписки (100 ₽)
     REFERRAL_FIRST_PAYMENT_COMMISSION_PERCENT: int | None = None
     REFERRAL_RECURRING_COMMISSION_TIERS: str = ''  # Формат: "0:10,10:15,50:20,100:25"
     REFERRAL_MAX_COMMISSION_PAYMENTS: int = 0  # Макс. кол-во платежей реферала с комиссией (0 = без лимита)
