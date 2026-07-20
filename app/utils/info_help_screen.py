@@ -70,21 +70,21 @@ def build_help_contacts_screen(
     if support_url:
         rows.append([
             types.InlineKeyboardButton(
-                text=texts.t('INFO_MENU_SUPPORT', '💬 Поддержка'),
+                text=texts.t('INFO_MENU_SUPPORT', 'Поддержка'),
                 url=support_url,
             )
         ])
     if privacy_url:
         rows.append([
             types.InlineKeyboardButton(
-                text=texts.t('INFO_MENU_PRIVACY', '🔒 Политика конфиденциальности'),
+                text=texts.t('INFO_MENU_PRIVACY', 'Политика конфиденциальности'),
                 url=privacy_url,
             )
         ])
     if agreement_url:
         rows.append([
             types.InlineKeyboardButton(
-                text=texts.t('INFO_MENU_AGREEMENT', '📄 Пользовательское соглашение'),
+                text=texts.t('INFO_MENU_AGREEMENT', 'Пользовательское соглашение'),
                 url=agreement_url,
             )
         ])

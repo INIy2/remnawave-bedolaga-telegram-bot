@@ -1137,7 +1137,7 @@
   "INFO_HELP_CABINET_LINE": "• Кабинет: подписка, баланс и установка — в главном меню",
   "INFO_HELP_PRIVACY_LINE": "• Политика конфиденциальности: <a href=\"{url}\">{read}</a>",
   "INFO_HELP_AGREEMENT_LINE": "• Пользовательское соглашение: <a href=\"{url}\">{read}</a>",
-  "INFO_MENU_AGREEMENT": "📄 Пользовательское соглашение",
+  "INFO_MENU_AGREEMENT": "Пользовательское соглашение",
   "MENU_INFO_PROMPT": "Выберите раздел:",
   "MENU_LANGUAGE": "🌐 Язык",
   "MENU_PRIVACY_POLICY": "🛡️ Политика конф.",
