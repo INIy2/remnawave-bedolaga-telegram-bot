@@ -36,6 +36,7 @@ from app.services.subscription_checkout_service import (
 from app.services.support_settings_service import SupportSettingsService
 from app.services.user_cart_service import user_cart_service
 from app.utils.display_mode import is_visible_in_bot
+from app.utils.info_help_screen import build_help_contacts_screen
 from app.utils.photo_message import edit_or_answer_photo
 from app.utils.pricing_utils import format_period_description
 from app.utils.promo_offer import (
@@ -473,75 +474,30 @@ async def show_info_menu(
 
     texts = get_texts(db_user.language)
 
-    header = texts.t('MENU_INFO_HEADER', 'ℹ️ <b>Инфо</b>')
-    prompt = texts.t('MENU_INFO_PROMPT', 'Выберите раздел:')
-    caption = f'{header}\n\n{prompt}' if prompt else header
-
-    # FreekVPN: экран «Инфо» — до 4 пунктов, каждый в своём ряду. Пункт
-    # показывается только если соответствующий раздел включён (гейтинг по флагам),
-    # чтобы не открывать пустой экран, если документ ещё не заведён на проде.
-    privacy_enabled = is_visible_in_bot(
-        settings.PRIVACY_POLICY_DISPLAY_MODE
-    ) and await PrivacyPolicyService.is_policy_enabled(db, db_user.language)
-    public_offer_enabled = is_visible_in_bot(
-        settings.PUBLIC_OFFER_DISPLAY_MODE
-    ) and await PublicOfferService.is_offer_enabled(db, db_user.language)
-    faq_enabled = is_visible_in_bot(settings.FAQ_DISPLAY_MODE) and await FaqService.is_enabled(db, db_user.language)
+    # FreekVPN: единый экран «Помощь и контакты» — быстрые ссылки текстом плюс
+    # те же пункты кнопками. Поддержка ведёт во внешний бот (SUPPORT_USERNAME),
+    # документы — на telegra.ph; пустая ссылка → пункт скрыт.
     try:
         support_enabled = SupportSettingsService.is_support_menu_enabled()
     except Exception:
         support_enabled = settings.SUPPORT_MENU_ENABLED
 
-    info_rows: list[list[types.InlineKeyboardButton]] = []
-    if public_offer_enabled:
-        info_rows.append(
-            [
-                types.InlineKeyboardButton(
-                    text=texts.t('INFO_MENU_OFFER', '📄 Публичная оферта'),
-                    callback_data='menu_public_offer',
-                )
-            ]
-        )
-    if privacy_enabled:
-        info_rows.append(
-            [
-                types.InlineKeyboardButton(
-                    text=texts.t('INFO_MENU_PRIVACY', '🔒 Политика конфиденциальности'),
-                    callback_data='menu_privacy_policy',
-                )
-            ]
-        )
-    if faq_enabled:
-        info_rows.append(
-            [
-                types.InlineKeyboardButton(
-                    text=texts.t('INFO_MENU_FAQ', '❓ Частые вопросы'),
-                    callback_data='menu_faq',
-                )
-            ]
-        )
-    if support_enabled:
-        info_rows.append(
-            [
-                types.InlineKeyboardButton(
-                    text=texts.t('INFO_MENU_SUPPORT', '💬 Поддержка'),
-                    callback_data='support_request',
-                )
-            ]
-        )
-    info_rows.append(
-        [
-            types.InlineKeyboardButton(
-                text=texts.t('MENU_BACK_BUTTON', '← Назад'),
-                callback_data='back_to_menu',
-            )
-        ]
+    support_url = settings.get_support_contact_url() or ''
+    if not support_enabled:
+        support_url = ''
+
+    caption, rows = build_help_contacts_screen(
+        texts,
+        support_username=settings.SUPPORT_USERNAME,
+        support_url=support_url,
+        privacy_url=(settings.PRIVACY_POLICY_URL or '').strip(),
+        agreement_url=(settings.USER_AGREEMENT_URL or '').strip(),
     )
 
     await edit_or_answer_photo(
         callback=callback,
         caption=caption,
-        keyboard=types.InlineKeyboardMarkup(inline_keyboard=info_rows),
+        keyboard=types.InlineKeyboardMarkup(inline_keyboard=rows),
         parse_mode='HTML',
     )
     await callback.answer()
