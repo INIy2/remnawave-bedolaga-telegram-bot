@@ -925,6 +925,10 @@ class Settings(BaseSettings):
     # URL кнопки "🌐 Сайт" в главном меню (обычная url-кнопка, открывает браузер).
     # Пусто → кнопка не показывается. Позже можно заменить на WebApp-кнопку.
     MAIN_MENU_SITE_URL: str = 'https://cabinetipn.duckdns.org'
+    # FreekVPN: внешние ссылки на юридические документы (telegra.ph, Instant View).
+    # Пусто → соответствующий пункт скрыт в инфо-экране «Помощь и контакты».
+    PRIVACY_POLICY_URL: str = ''
+    USER_AGREEMENT_URL: str = ''
     # Стиль кнопок Cabinet: primary (синий), success (зелёный), danger (красный), '' (по умолчанию для каждой секции)
     CABINET_BUTTON_STYLE: str = ''
     CONNECT_BUTTON_MODE: str = 'miniapp_subscription'
