@@ -261,6 +261,12 @@ def get_tariffs_keyboard(
         else:
             buttons.append([InlineKeyboardButton(text=tariff.name, callback_data=f'tariff_select:{tariff.id}')])
 
+    buttons.append([
+        InlineKeyboardButton(
+            text=texts.t('MENU_HAVE_PROMOCODE', '🎟️ У меня есть промокод'),
+            callback_data='menu_promocode',
+        )
+    ])
     buttons.append([InlineKeyboardButton(text=texts.BACK, callback_data='back_to_menu')])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -295,6 +301,12 @@ def get_tariff_periods_keyboard(
         button_text = f'{format_period(period)} — {price_text}'
         buttons.append([InlineKeyboardButton(text=button_text, callback_data=f'tariff_period:{tariff.id}:{period}')])
 
+    buttons.append([
+        InlineKeyboardButton(
+            text=texts.t('MENU_HAVE_PROMOCODE', '🎟️ У меня есть промокод'),
+            callback_data='menu_promocode',
+        )
+    ])
     buttons.append([InlineKeyboardButton(text=texts.BACK, callback_data=back_callback)])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
