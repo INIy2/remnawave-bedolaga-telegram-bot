@@ -6,7 +6,6 @@ from aiogram.fsm.context import FSMContext
 
 from app.config import settings
 from app.database.models import User
-from app.keyboards.inline import get_support_keyboard
 from app.localization.texts import get_texts
 from app.services.support_settings_service import SupportSettingsService
 from app.states import SupportRequestStates
@@ -25,12 +24,22 @@ SUPPORT_CATEGORIES: dict[str, str] = {
 
 
 async def show_support_info(callback: types.CallbackQuery, db_user: User):
-    get_texts(db_user.language)
-    support_info = SupportSettingsService.get_support_info_text(db_user.language)
+    texts = get_texts(db_user.language)
+
+    from app.utils.support_screen import build_support_screen
+
+    tickets_enabled = SupportSettingsService.is_tickets_enabled()
+    caption, rows = build_support_screen(
+        texts,
+        support_username=settings.SUPPORT_USERNAME or '',
+        support_url=settings.get_support_contact_url() or '',
+        support_email=settings.get_support_email(),
+        tickets_enabled=tickets_enabled,
+    )
     await edit_or_answer_photo(
         callback=callback,
-        caption=support_info,
-        keyboard=get_support_keyboard(db_user.language),
+        caption=caption,
+        keyboard=types.InlineKeyboardMarkup(inline_keyboard=rows),
         parse_mode='HTML',
     )
     await callback.answer()

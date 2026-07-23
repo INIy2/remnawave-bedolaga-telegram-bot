@@ -71,7 +71,7 @@ def build_help_contacts_screen(
         rows.append([
             types.InlineKeyboardButton(
                 text=texts.t('INFO_MENU_SUPPORT', 'Поддержка'),
-                url=support_url,
+                callback_data='menu_support',
             )
         ])
     if privacy_url:

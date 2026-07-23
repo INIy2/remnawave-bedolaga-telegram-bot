@@ -30,7 +30,7 @@ def test_full_screen_has_all_links_and_buttons():
     assert 'https://telegra.ph/agreement' in caption
 
     urls = _urls(rows)
-    assert 'https://t.me/FreakVPN_SupportBot' in urls
+    assert 'menu_support' in _callbacks(rows)
     assert 'https://telegra.ph/privacy' in urls
     assert 'https://telegra.ph/agreement' in urls
     assert 'back_to_menu' in _callbacks(rows)
@@ -59,7 +59,8 @@ def test_documents_hidden_when_no_url():
         agreement_url='',
     )
     assert 'telegra.ph' not in caption
-    assert _urls(rows) == ['https://t.me/FreakVPN_SupportBot']
+    assert _urls(rows) == []
+    assert 'menu_support' in _callbacks(rows)
     assert 'back_to_menu' in _callbacks(rows)
 
 
