@@ -964,15 +964,23 @@ class RemnaWaveWebhookService:
                 logger.warning('Failed to format message with kwargs', text_key=text_key, format_kwargs=format_kwargs)
                 return
 
-        # Append "Close" button to every webhook notification keyboard
+        # Append "Home" + "Close" buttons to every webhook notification keyboard.
+        # «На главную» ведёт в главное меню бота (callback back_to_menu) — иначе
+        # пользователю непонятно, что делать, если такое уведомление всплыло.
+        home_row = [
+            InlineKeyboardButton(
+                text=texts.get('WEBHOOK_HOME_BUTTON', '🏠 На главную'),
+                callback_data='back_to_menu',
+            )
+        ]
         close_text = texts.get('WEBHOOK_CLOSE_BUTTON', '✖️ Закрыть')
         close_row = [InlineKeyboardButton(text=close_text, callback_data='webhook:close')]
         if reply_markup:
             reply_markup = InlineKeyboardMarkup(
-                inline_keyboard=[*reply_markup.inline_keyboard, close_row],
+                inline_keyboard=[*reply_markup.inline_keyboard, home_row, close_row],
             )
         else:
-            reply_markup = InlineKeyboardMarkup(inline_keyboard=[close_row])
+            reply_markup = InlineKeyboardMarkup(inline_keyboard=[home_row, close_row])
 
         notification_type = _TEXT_KEY_TO_NOTIFICATION_TYPE.get(text_key)
         if not notification_type:

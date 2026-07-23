@@ -1743,7 +1743,7 @@ class MonitoringService:
 
 Ваша подписка истекла. Для восстановления доступа продлите подписку.
 
-🔧 Доступ к серверам заблокирован до продления.
+Доступ к серверам заблокирован до продления.
 """
 
             from aiogram.types import InlineKeyboardMarkup
@@ -1751,8 +1751,7 @@ class MonitoringService:
             extend_callback = f'se:{subscription.id}' if settings.is_multi_tariff_enabled() else 'subscription_extend'
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [build_miniapp_or_callback_button(text='💎 Продлить подписку', callback_data=extend_callback)],
-                    [build_miniapp_or_callback_button(text='💳 Пополнить баланс', callback_data='balance_topup')],
+                    [build_miniapp_or_callback_button(text='Продлить подписку', callback_data=extend_callback)],
                 ]
             )
 
@@ -1831,7 +1830,6 @@ class MonitoringService:
                 'SUBSCRIPTION_EXPIRING_PAID',
                 '\n⚠️ <b>Подписка{tariff_label} истекает через {days_text}!</b>\n\n'
                 'Ваша платная подписка истекает {end_date}.\n\n'
-                '💳 <b>Автоплатеж:</b> {autopay_status}\n\n'
                 '{action_text}\n',
             ).format(
                 days_text=days_text,
@@ -1844,26 +1842,15 @@ class MonitoringService:
             from aiogram.types import InlineKeyboardMarkup
 
             extend_callback = f'se:{subscription.id}' if settings.is_multi_tariff_enabled() else 'subscription_extend'
-            sub_btn_text = texts.t(
-                'BTN_MY_SUBSCRIPTIONS' if settings.is_multi_tariff_enabled() else 'BTN_MY_SUBSCRIPTION',
-                '📱 Мои подписки' if settings.is_multi_tariff_enabled() else '📱 Моя подписка',
-            )
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
                     [
                         build_miniapp_or_callback_button(
-                            text=texts.t('BTN_RENEW_SUBSCRIPTION', '⏰ Продлить подписку'),
+                            text=texts.t('BTN_RENEW_SUBSCRIPTION', 'Продлить подписку'),
                             callback_data=extend_callback,
                             cabinet_path='/subscription',
                         )
                     ],
-                    [
-                        build_miniapp_or_callback_button(
-                            text=texts.t('BTN_TOPUP_BALANCE', '💳 Пополнить баланс'),
-                            callback_data='balance_topup',
-                        )
-                    ],
-                    [build_miniapp_or_callback_button(text=sub_btn_text, callback_data='menu_subscription')],
                 ]
             )
 
@@ -1903,22 +1890,18 @@ class MonitoringService:
             if settings.is_multi_tariff_enabled() and hasattr(subscription, 'tariff') and subscription.tariff:
                 tariff_label = f' «{subscription.tariff.name}»'
             message = f"""
-🎁 <b>Тестовая подписка{tariff_label} скоро закончится!</b>
+<b>Тестовая подписка{tariff_label} скоро закончится!</b>
 
-Ваша тестовая подписка истекает через 2 часа.
+О нет, тестовая подписка истекает через 2 часа!
 
-💎 <b>Не хотите остаться без VPN?</b>
-Переходите на полную подписку!
-
-⚡️ Успейте оформить до окончания тестового периода!
+Успейте оформить подписку до окончания тестового периода!
 """
 
             from aiogram.types import InlineKeyboardMarkup
 
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [build_miniapp_or_callback_button(text='💎 Купить подписку', callback_data='menu_buy')],
-                    [build_miniapp_or_callback_button(text='💰 Пополнить баланс', callback_data='balance_topup')],
+                    [build_miniapp_or_callback_button(text='Купить подписку', callback_data='menu_buy')],
                 ]
             )
 
@@ -2062,7 +2045,7 @@ class MonitoringService:
                 tariff_label=tariff_label,
             )
 
-            from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+            from aiogram.types import InlineKeyboardMarkup
 
             extend_callback = f'se:{subscription.id}' if settings.is_multi_tariff_enabled() else 'subscription_extend'
 
@@ -2070,19 +2053,8 @@ class MonitoringService:
                 inline_keyboard=[
                     [
                         build_miniapp_or_callback_button(
-                            text=texts.t('SUBSCRIPTION_EXTEND', '💎 Продлить подписку'),
+                            text=texts.t('SUBSCRIPTION_EXTEND', 'Продлить'),
                             callback_data=extend_callback,
-                        )
-                    ],
-                    [
-                        build_miniapp_or_callback_button(
-                            text=texts.t('BALANCE_TOPUP', '💳 Пополнить баланс'),
-                            callback_data='balance_topup',
-                        )
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            text=texts.t('SUPPORT_BUTTON', '🆘 Поддержка'), callback_data='menu_support'
                         )
                     ],
                 ]
@@ -2159,7 +2131,7 @@ class MonitoringService:
                 tariff_label=tariff_label,
             )
 
-            from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+            from aiogram.types import InlineKeyboardMarkup
 
             extend_callback = f'se:{subscription.id}' if settings.is_multi_tariff_enabled() else 'subscription_extend'
 
@@ -2172,19 +2144,8 @@ class MonitoringService:
                     ],
                     [
                         build_miniapp_or_callback_button(
-                            text=texts.t('SUBSCRIPTION_EXTEND', '💎 Продлить подписку'),
+                            text=texts.t('SUBSCRIPTION_EXTEND', 'Продлить'),
                             callback_data=extend_callback,
-                        )
-                    ],
-                    [
-                        build_miniapp_or_callback_button(
-                            text=texts.t('BALANCE_TOPUP', '💳 Пополнить баланс'),
-                            callback_data='balance_topup',
-                        )
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            text=texts.t('SUPPORT_BUTTON', '🆘 Поддержка'), callback_data='menu_support'
                         )
                     ],
                 ]
