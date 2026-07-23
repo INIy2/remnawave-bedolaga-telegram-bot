@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     TEST_EMAIL_PASSWORD: str = ''  # Password for test account
 
     SUPPORT_USERNAME: str = '@support'
+    SUPPORT_EMAIL: str = ''
     SUPPORT_MENU_ENABLED: bool = True
     SUPPORT_SYSTEM_MODE: str = 'both'  # one of: tickets, contact, both
     # SLA for support tickets
@@ -958,6 +959,8 @@ class Settings(BaseSettings):
     HAPP_DOWNLOAD_LINK_MACOS: str | None = None
     HAPP_DOWNLOAD_LINK_WINDOWS: str | None = None
     HAPP_DOWNLOAD_LINK_PC: str | None = None
+    INCY_DOWNLOAD_LINK: str = 'https://apps.apple.com/app/id6756943388'
+    INCY_CRYPTOLINK_REDIRECT_TEMPLATE: str | None = None
     HIDE_SUBSCRIPTION_LINK: bool = False
     ENABLE_LOGO_MODE: bool = True
     LOGO_FILE: str = 'vpn_logo.png'
@@ -2830,6 +2833,14 @@ class Settings(BaseSettings):
         template = (self.HAPP_CRYPTOLINK_REDIRECT_TEMPLATE or '').strip()
         return template or None
 
+    def get_incy_download_link(self) -> str | None:
+        link = (self.INCY_DOWNLOAD_LINK or '').strip()
+        return link or None
+
+    def get_incy_cryptolink_redirect_template(self) -> str | None:
+        template = (self.INCY_CRYPTOLINK_REDIRECT_TEMPLATE or '').strip()
+        return template or None
+
     def get_happ_download_link(self, platform: str) -> str | None:
         platform_key = platform.lower()
 
@@ -3293,6 +3304,9 @@ class Settings(BaseSettings):
 
     def get_support_contact_display_html(self) -> str:
         return html.escape(self.get_support_contact_display())
+
+    def get_support_email(self) -> str:
+        return (self.SUPPORT_EMAIL or '').strip()
 
     def get_server_status_mode(self) -> str:
         return self.SERVER_STATUS_MODE
