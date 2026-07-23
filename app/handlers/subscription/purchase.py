@@ -783,15 +783,6 @@ def _get_trial_payment_keyboard(language: str, can_pay_from_balance: bool = Fals
 # _show_guide_screen ниже — там оставлен комментарий как вернуть видео).
 INSTALL_VIDEO_PATH = 'assets/gaid.mp4'
 
-# Платформы для ссылок скачивания Happ (порядок = порядок строк в тексте).
-# Ссылки берутся из HAPP_DOWNLOAD_LINK_* через settings.get_happ_download_link().
-_HAPP_DOWNLOAD_PLATFORMS = [
-    ('android', 'Android'),
-    ('ios', 'iOS'),
-    ('windows', 'Windows'),
-    ('macos', 'MacOS'),
-]
-
 
 async def _show_guide_screen(callback: types.CallbackQuery, caption: str, keyboard: types.InlineKeyboardMarkup) -> None:
     """Показывает экран гайда картинкой (логотип) + инструкция в подписи.
@@ -808,62 +799,27 @@ async def _show_guide_screen(callback: types.CallbackQuery, caption: str, keyboa
 
 
 async def show_install_guide_devices(callback: types.CallbackQuery, db_user: User, db: AsyncSession):
-    """Экран «Подключиться»: видео + ссылки на скачивание Happ + моментальное подключение."""
+    """Экран «Подключиться»: приложения Happ/INCY + ссылка подписки + one-tap кнопки."""
     texts = get_texts(db_user.language)
 
+    from app.utils.connect_screen import build_connect_screen
     from app.utils.subscription_utils import (
-        convert_subscription_link_to_happ_scheme,
         get_display_subscription_link,
         get_happ_cryptolink_redirect_link,
+        get_incy_redirect_link,
     )
 
     subscription = getattr(db_user, 'subscription', None)
     link = get_display_subscription_link(subscription) if subscription else None
 
-    lines = [texts.t('CONNECT_HAPP_TITLE', '🔗 <b>Подключение через Happ</b>'), '']
-
-    # Ссылки на скачивание Happ по платформам (текстом)
-    download_lines = [
-        f'{name}: <a href="{url}">скачать</a>'
-        for key, name in _HAPP_DOWNLOAD_PLATFORMS
-        if (url := settings.get_happ_download_link(key))
-    ]
-    if download_lines:
-        lines.append(texts.t('CONNECT_HAPP_DOWNLOAD', '<b>Скачиваем Happ:</b>'))
-        lines.extend(download_lines)
-        lines.append('')
-
-    # Моментальное подключение (открыть конфиг в Happ)
-    redirect_link = get_happ_cryptolink_redirect_link(link) if link else None
-    happ_scheme = convert_subscription_link_to_happ_scheme(link) if link else None
-    if happ_scheme and not redirect_link:
-        lines.append(texts.t('CONNECT_HAPP_OPEN_LINK', '🔓 <a href="{link}">Открыть ссылку в Happ</a>').format(link=happ_scheme))
-        lines.append('')
-
-    # Ручное копирование ссылки
-    if link:
-        lines.append(
-            texts.t(
-                'CONNECT_HAPP_COPY_HINT',
-                '💡 Если ссылка не открывается автоматически, скопируйте её вручную:',
-            )
-        )
-        lines.append(f'<blockquote expandable><code>{link}</code></blockquote>')
-
-    caption = '\n'.join(lines)
-
-    rows: list[list[types.InlineKeyboardButton]] = []
-    if redirect_link:
-        rows.append(
-            [types.InlineKeyboardButton(text=texts.t('CONNECT_HAPP_CONNECT_BTN', '🔌 Подключиться'), url=redirect_link)]
-        )
-    rows.append(
-        [
-            types.InlineKeyboardButton(
-                text=texts.t('BACK_TO_MAIN_MENU_BUTTON', '⬅️ В главное меню'),
-                callback_data='back_to_menu',
-            )
-        ]
+    caption, rows = build_connect_screen(
+        texts,
+        happ_android_url=settings.get_happ_download_link('android') or '',
+        happ_windows_url=settings.get_happ_download_link('windows') or '',
+        incy_url=settings.get_incy_download_link() or '',
+        subscription_link=link or '',
+        happ_redirect_url=(get_happ_cryptolink_redirect_link(link) or '') if link else '',
+        incy_redirect_url=(get_incy_redirect_link(link) or '') if link else '',
     )
 
     await _show_guide_screen(callback, caption, types.InlineKeyboardMarkup(inline_keyboard=rows))
