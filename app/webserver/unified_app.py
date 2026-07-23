@@ -15,7 +15,10 @@ from app.cabinet.apple_iap import apple_iap_only_router
 from app.config import settings
 from app.services.disposable_email_service import disposable_email_service
 from app.services.payment_service import PaymentService
-from app.utils.subscription_utils import convert_subscription_link_to_happ_scheme
+from app.utils.subscription_utils import (
+    convert_subscription_link_to_happ_scheme,
+    convert_subscription_link_to_incy_scheme,
+)
 from app.webapi.docs import add_redoc_endpoint
 
 from . import payments, telegram
@@ -24,22 +27,22 @@ from . import payments, telegram
 logger = structlog.get_logger(__name__)
 
 
-def _render_happ_redirect_page(happ_link: str | None) -> tuple[str, int]:
-    """Build the HTML page that bounces the browser into the Happ app.
+def _render_app_redirect_page(deep_link: str | None, app_name: str = 'Happ') -> tuple[str, int]:
+    """Build the HTML page that bounces the browser into the target app.
 
     Telegram inline-keyboard URL buttons only accept http/https/tg:// schemes,
-    so a one-tap "Подключиться" button cannot point at ``happ://`` directly.
+    so a one-tap "Подключиться" button cannot point at a custom scheme directly.
     Instead the button points at this https endpoint, which forwards to the
-    ``happ://`` scheme. iOS Safari and Telegram's in-app browser often refuse to
-    auto-open a custom scheme without a user gesture, so we attempt an automatic
-    redirect AND always render a prominent manual button as a fallback.
+    app scheme (``happ://`` / ``incy://``). iOS Safari and Telegram's in-app
+    browser often refuse to auto-open a custom scheme without a user gesture, so
+    we attempt an automatic redirect AND always render a manual button fallback.
 
     Returns ``(html, status_code)``.
     """
     import html as _html
     import json as _json
 
-    if not happ_link:
+    if not deep_link:
         page = (
             '<!doctype html><html lang="ru"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -51,15 +54,16 @@ def _render_happ_redirect_page(happ_link: str | None) -> tuple[str, int]:
         )
         return page, status.HTTP_400_BAD_REQUEST
 
-    href = _html.escape(happ_link, quote=True)
-    js_link = _json.dumps(happ_link)
+    href = _html.escape(deep_link, quote=True)
+    js_link = _json.dumps(deep_link)
+    name = _html.escape(app_name)
     page = f"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="0; url={href}">
-<title>Подключение через Happ</title>
+<title>Подключение через {name}</title>
 <style>
   body {{ font-family: -apple-system, Segoe UI, Roboto, sans-serif; background:#111; color:#eee;
          display:flex; min-height:100vh; margin:0; align-items:center; justify-content:center; }}
@@ -72,12 +76,11 @@ def _render_happ_redirect_page(happ_link: str | None) -> tuple[str, int]:
 </head>
 <body>
 <div class="card">
-  <h1>🔗 Открываем Happ…</h1>
+  <h1>🔗 Открываем {name}…</h1>
   <p>Если приложение не открылось автоматически, нажмите кнопку ниже.</p>
-  <a class="btn" href="{href}">Открыть в Happ</a>
+  <a class="btn" href="{href}">Открыть в {name}</a>
 </div>
 <script>
-  // Немедленная попытка открыть приложение по клику-эквиваленту.
   window.location.replace({js_link});
 </script>
 </body>
@@ -323,7 +326,25 @@ def create_unified_app(
         if subscription_link.lower().startswith(('http://', 'https://', 'happ://')):
             happ_link = convert_subscription_link_to_happ_scheme(subscription_link)
 
-        page, status_code = _render_happ_redirect_page(happ_link)
+        page, status_code = _render_app_redirect_page(happ_link, 'Happ')
+        return HTMLResponse(
+            content=page,
+            status_code=status_code,
+            headers={'Cache-Control': 'no-store'},
+        )
+
+    # INCY deep-link redirect (iPhone/iPad, macOS). Зеркало /happ: Telegram не
+    # принимает схему incy:// в URL-кнопках, поэтому кнопка ведёт сюда, а роут
+    # перебрасывает в приложение INCY. Включается INCY_CRYPTOLINK_REDIRECT_TEMPLATE
+    # (https://<домен-бота>/incy?url={subscription_link}).
+    @app.get('/incy', include_in_schema=False)
+    async def incy_redirect(url: str = '') -> HTMLResponse:  # pragma: no cover - thin redirect endpoint
+        subscription_link = (url or '').strip()
+        incy_link: str | None = None
+        if subscription_link.lower().startswith(('http://', 'https://', 'incy://')):
+            incy_link = convert_subscription_link_to_incy_scheme(subscription_link)
+
+        page, status_code = _render_app_redirect_page(incy_link, 'INCY')
         return HTMLResponse(
             content=page,
             status_code=status_code,
