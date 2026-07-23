@@ -58,14 +58,7 @@ def get_display_subscription_link(subscription: Subscription | None) -> str | No
     return base_link
 
 
-def get_happ_cryptolink_redirect_link(subscription_link: str | None) -> str | None:
-    if not subscription_link:
-        return None
-
-    template = settings.get_happ_cryptolink_redirect_template()
-    if not template:
-        return None
-
+def _build_cryptolink_redirect_link(subscription_link: str, template: str) -> str:
     encoded_link = quote(subscription_link, safe='')
     replacements = {
         '{subscription_link}': encoded_link,
@@ -89,6 +82,28 @@ def get_happ_cryptolink_redirect_link(subscription_link: str | None) -> str | No
     return f'{template}{encoded_link}'
 
 
+def get_happ_cryptolink_redirect_link(subscription_link: str | None) -> str | None:
+    if not subscription_link:
+        return None
+
+    template = settings.get_happ_cryptolink_redirect_template()
+    if not template:
+        return None
+
+    return _build_cryptolink_redirect_link(subscription_link, template)
+
+
+def get_incy_redirect_link(subscription_link: str | None) -> str | None:
+    if not subscription_link:
+        return None
+
+    template = settings.get_incy_cryptolink_redirect_template()
+    if not template:
+        return None
+
+    return _build_cryptolink_redirect_link(subscription_link, template)
+
+
 def convert_subscription_link_to_happ_scheme(subscription_link: str | None) -> str | None:
     """Build a Happ deep link that imports the subscription.
 
@@ -106,6 +121,24 @@ def convert_subscription_link_to_happ_scheme(subscription_link: str | None) -> s
         return link
     if link.lower().startswith(('http://', 'https://')):
         return f'happ://add/{link}'
+    return None
+
+
+def convert_subscription_link_to_incy_scheme(subscription_link: str | None) -> str | None:
+    """Build an INCY deep link that imports the subscription.
+
+    INCY uses the same import convention as Happ: ``incy://add/<plain https url>``
+    with the PLAIN https subscription URL. A already-``incy://`` link is returned
+    as-is.
+    """
+    if not subscription_link:
+        return None
+
+    link = subscription_link.strip()
+    if link.lower().startswith('incy://'):
+        return link
+    if link.lower().startswith(('http://', 'https://')):
+        return f'incy://add/{link}'
     return None
 
 
