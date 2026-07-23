@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import html
+
 from aiogram import types
 
 
@@ -41,14 +43,14 @@ def build_help_contacts_screen(
             texts.t(
                 'INFO_HELP_SUPPORT_BOT_LINE',
                 '• Поддержка бот: <a href="{url}">{username}</a>',
-            ).format(url=support_url, username=username)
+            ).format(url=html.escape(support_url, quote=True), username=html.escape(username))
         )
     if support_email:
         support_lines.append(
             texts.t(
                 'INFO_HELP_SUPPORT_EMAIL_LINE',
                 '• Поддержка почта: <code>{email}</code>',
-            ).format(email=support_email)
+            ).format(email=html.escape(support_email))
         )
     if tickets_enabled:
         support_lines.append(
@@ -64,14 +66,14 @@ def build_help_contacts_screen(
             texts.t(
                 'INFO_HELP_PRIVACY_LINE',
                 '• Политика конфиденциальности: <a href="{url}">{read}</a>',
-            ).format(url=privacy_url, read=read)
+            ).format(url=html.escape(privacy_url, quote=True), read=read)
         )
     if agreement_url:
         doc_lines.append(
             texts.t(
                 'INFO_HELP_AGREEMENT_LINE',
                 '• Пользовательское соглашение: <a href="{url}">{read}</a>',
-            ).format(url=agreement_url, read=read)
+            ).format(url=html.escape(agreement_url, quote=True), read=read)
         )
 
     if support_lines:

@@ -34,6 +34,9 @@ def test_full_screen_has_both_apps_all_platforms_and_buttons():
     assert 'https://apps.apple.com/incy' in caption
     assert 'https://play.google.com/incy' in caption
     assert 'https://incy/win.exe' in caption
+    # Windows-подсказки про нужный файл
+    assert 'setup-Happ.x64.exe' in caption
+    assert 'incy-windows-setup.exe' in caption
     assert 'https://sub.freekov.net/abc' in caption
     urls = _urls(rows)
     assert 'https://bot/happ?url=x' in urls
@@ -56,6 +59,7 @@ def test_incy_android_windows_hidden_when_unset():
     assert 'https://apps.apple.com/incy' in caption
     # В подзаголовке INCY не должно быть Android/Windows, если ссылок нет
     assert 'INCY</b> — iPhone/iPad, macOS\n' in caption
+    assert 'incy-windows-setup.exe' not in caption
     urls = _urls(rows)
     assert 'https://bot/happ?url=x' in urls
     assert all('incy' not in u for u in urls)
@@ -78,6 +82,19 @@ def test_copy_block_hidden_without_link():
     )
     assert '<code>' not in caption
     assert _callbacks(rows) == ['back_to_menu']
+
+
+def test_url_with_ampersand_is_html_escaped():
+    caption, _rows = build_connect_screen(
+        _texts(),
+        incy_android_url='https://play.google.com/store/apps/details?id=x&hl=ru',
+        subscription_link='https://sub/a?b=1&c=2',
+    )
+    assert 'href="https://play.google.com/store/apps/details?id=x&amp;hl=ru"' in caption
+    assert '<code>https://sub/a?b=1&amp;c=2</code>' in caption
+    # сырой & не должен попасть в caption
+    assert '&hl=ru' not in caption
+    assert 'c=2</code>' in caption and 'b=1&c=2' not in caption
 
 
 def test_back_button_always_last():
