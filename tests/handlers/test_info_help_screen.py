@@ -14,40 +14,46 @@ def _texts():
     return get_texts('ru')
 
 
-def test_full_screen_has_all_links_and_buttons():
+def test_full_screen_has_support_channels_docs_and_ticket_button():
     caption, rows = build_help_contacts_screen(
         _texts(),
         support_username='@FreakVPN_SupportBot',
         support_url='https://t.me/FreakVPN_SupportBot',
+        support_email='FreakVPNsp@outlook.com',
         privacy_url='https://telegra.ph/privacy',
         agreement_url='https://telegra.ph/agreement',
+        tickets_enabled=True,
     )
-
     assert 'Помощь и контакты' in caption
-    assert '<blockquote>' in caption
     assert '@FreakVPN_SupportBot' in caption
+    assert '<code>FreakVPNsp@outlook.com</code>' in caption
+    assert 'Создать обращение' in caption  # строка про тикет
     assert 'https://telegra.ph/privacy' in caption
     assert 'https://telegra.ph/agreement' in caption
 
     urls = _urls(rows)
-    assert 'menu_support' in _callbacks(rows)
+    cbs = _callbacks(rows)
+    assert 'support_request' in cbs
     assert 'https://telegra.ph/privacy' in urls
     assert 'https://telegra.ph/agreement' in urls
-    assert 'back_to_menu' in _callbacks(rows)
+    # Прямой кнопки-ссылки на поддержку больше нет
+    assert 'https://t.me/FreakVPN_SupportBot' not in urls
+    assert cbs[-1] == 'back_to_menu'
 
 
-def test_support_hidden_when_no_url():
+def test_email_and_ticket_hidden_when_absent():
     caption, rows = build_help_contacts_screen(
         _texts(),
-        support_username='@FreakVPN_SupportBot',
-        support_url='',
-        privacy_url='https://telegra.ph/privacy',
-        agreement_url='https://telegra.ph/agreement',
+        support_username='@x',
+        support_url='https://t.me/x',
+        support_email='',
+        privacy_url='',
+        agreement_url='',
+        tickets_enabled=False,
     )
-    assert '@FreakVPN_SupportBot' not in caption
-    assert 'https://t.me/FreakVPN_SupportBot' not in _urls(rows)
-    # Кабинет-строка остаётся
-    assert 'Кабинет' in caption
+    assert '<code>' not in caption
+    assert 'Создать обращение' not in caption
+    assert 'support_request' not in _callbacks(rows)
 
 
 def test_documents_hidden_when_no_url():
@@ -55,22 +61,24 @@ def test_documents_hidden_when_no_url():
         _texts(),
         support_username='@FreakVPN_SupportBot',
         support_url='https://t.me/FreakVPN_SupportBot',
+        support_email='',
         privacy_url='',
         agreement_url='',
+        tickets_enabled=False,
     )
     assert 'telegra.ph' not in caption
     assert _urls(rows) == []
-    assert 'menu_support' in _callbacks(rows)
     assert 'back_to_menu' in _callbacks(rows)
 
 
-def test_back_button_always_present():
-    caption, rows = build_help_contacts_screen(
+def test_back_button_always_last():
+    _caption, rows = build_help_contacts_screen(
         _texts(),
         support_username='',
         support_url='',
+        support_email='',
         privacy_url='',
         agreement_url='',
+        tickets_enabled=False,
     )
-    assert 'back_to_menu' in _callbacks(rows)
     assert rows[-1][0].callback_data == 'back_to_menu'

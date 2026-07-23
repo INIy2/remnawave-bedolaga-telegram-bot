@@ -2,8 +2,8 @@
 
 Чистая функция: получает готовые ссылки/настройки и возвращает caption + ряды
 кнопок. Не ходит в БД и не знает про конфиг — резолв делает хендлер
-show_install_guide_devices. Группировка по приложениям: Happ (Android/Windows)
-и INCY (iPhone/iPad/macOS).
+show_install_guide_devices. Группировка по приложениям: Happ и INCY, у каждого —
+свои ссылки на платформы (показываются только заданные).
 """
 
 from __future__ import annotations
@@ -17,6 +17,8 @@ def build_connect_screen(
     happ_android_url: str = '',
     happ_windows_url: str = '',
     incy_url: str = '',
+    incy_android_url: str = '',
+    incy_windows_url: str = '',
     subscription_link: str = '',
     happ_redirect_url: str = '',
     incy_redirect_url: str = '',
@@ -29,23 +31,38 @@ def build_connect_screen(
     if intro:
         caption += f'\n\n{intro}'
 
-    happ_lines: list[str] = []
-    if happ_android_url:
-        happ_lines.append(f'Android: <a href="{happ_android_url}">{download}</a>')
-    if happ_windows_url:
-        happ_lines.append(f'Windows: <a href="{happ_windows_url}">{download}</a>')
-    if happ_lines:
-        caption += '\n\n' + texts.t('CONNECT_SCREEN_HAPP', '<b>Happ</b> — Android, Windows')
-        caption += '\n' + '\n'.join(happ_lines)
+    def _app_block(name: str, entries: list[tuple[str, str, str]]) -> str:
+        """entries: (suffix_label, line_label, url). Пустые url пропускаются."""
+        present = [(suffix, line, url) for suffix, line, url in entries if url]
+        if not present:
+            return ''
+        suffix = ', '.join(s for s, _, _ in present)
+        block = f'\n\n<b>{name}</b> — {suffix}'
+        for _, line_label, url in present:
+            block += f'\n{line_label}: <a href="{url}">{download}</a>'
+        return block
 
-    if incy_url:
-        caption += '\n\n' + texts.t('CONNECT_SCREEN_INCY', '<b>INCY</b> — iPhone/iPad, macOS')
-        caption += '\n' + f'App Store: <a href="{incy_url}">{download}</a>'
+    caption += _app_block(
+        'Happ',
+        [
+            ('Android', 'Android', happ_android_url),
+            ('Windows', 'Windows', happ_windows_url),
+        ],
+    )
+    caption += _app_block(
+        'INCY',
+        [
+            ('iPhone/iPad, macOS', 'App Store', incy_url),
+            ('Android', 'Android', incy_android_url),
+            ('Windows', 'Windows', incy_windows_url),
+        ],
+    )
 
     if subscription_link:
         caption += '\n\n' + texts.t(
             'CONNECT_SCREEN_COPY_HINT',
-            '💡 Если кнопка ниже не сработала — скопируй ссылку и добавь вручную:',
+            '💡 Когда вы скачаете приложение, нажмите на подключение к нему. '
+            'Если кнопка не работает, скопируйте ссылку и вставьте в приложение:',
         )
         caption += f'\n<blockquote expandable><code>{subscription_link}</code></blockquote>'
 

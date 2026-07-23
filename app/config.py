@@ -960,6 +960,8 @@ class Settings(BaseSettings):
     HAPP_DOWNLOAD_LINK_WINDOWS: str | None = None
     HAPP_DOWNLOAD_LINK_PC: str | None = None
     INCY_DOWNLOAD_LINK: str = 'https://apps.apple.com/app/id6756943388'
+    INCY_DOWNLOAD_LINK_ANDROID: str | None = None
+    INCY_DOWNLOAD_LINK_WINDOWS: str | None = None
     INCY_CRYPTOLINK_REDIRECT_TEMPLATE: str | None = None
     HIDE_SUBSCRIPTION_LINK: bool = False
     ENABLE_LOGO_MODE: bool = True
@@ -2835,6 +2837,14 @@ class Settings(BaseSettings):
 
     def get_incy_download_link(self) -> str | None:
         link = (self.INCY_DOWNLOAD_LINK or '').strip()
+        return link or None
+
+    def get_incy_download_link_android(self) -> str | None:
+        link = (self.INCY_DOWNLOAD_LINK_ANDROID or '').strip()
+        return link or None
+
+    def get_incy_download_link_windows(self) -> str | None:
+        link = (self.INCY_DOWNLOAD_LINK_WINDOWS or '').strip()
         return link or None
 
     def get_incy_cryptolink_redirect_template(self) -> str | None:

@@ -1,8 +1,11 @@
 """Билдер инфо-экрана «Помощь и контакты» (классический бот FreekVPN).
 
-Чистая функция: получает готовые значения (тексты, контакт, ссылки) и
-возвращает caption + ряды кнопок. Не ходит в БД и не знает про конфиг —
-резолв настроек делает хендлер show_info_menu.
+Чистая функция: получает готовые значения (тексты, контакты, ссылки, включены
+ли тикеты) и возвращает caption + ряды кнопок. Не ходит в БД и не знает про
+конфиг — резолв настроек делает хендлер show_info_menu.
+
+Все каналы поддержки (бот/почта/тикет) и документы (политика/соглашение) собраны
+на одном экране: текстом-ссылками плюс кнопки «Создать обращение» и документы.
 """
 
 from __future__ import annotations
@@ -17,6 +20,8 @@ def build_help_contacts_screen(
     support_url: str,
     privacy_url: str,
     agreement_url: str,
+    support_email: str = '',
+    tickets_enabled: bool = False,
 ) -> tuple[str, list[list[types.InlineKeyboardButton]]]:
     header = texts.t('INFO_HELP_HEADER', '💡 <b>Помощь и контакты</b>')
     intro = texts.t(
@@ -29,21 +34,29 @@ def build_help_contacts_screen(
     if intro:
         caption += f'\n<blockquote>{intro}</blockquote>'
 
-    contact_lines: list[str] = []
+    support_lines: list[str] = []
     if support_url:
         username = (support_username or '').strip() or '@support'
-        contact_lines.append(
+        support_lines.append(
             texts.t(
-                'INFO_HELP_SUPPORT_LINE',
-                '• Поддержка: <a href="{url}">{username}</a>',
+                'INFO_HELP_SUPPORT_BOT_LINE',
+                '• Поддержка бот: <a href="{url}">{username}</a>',
             ).format(url=support_url, username=username)
         )
-    contact_lines.append(
-        texts.t(
-            'INFO_HELP_CABINET_LINE',
-            '• Кабинет: подписка, баланс и установка — в главном меню',
+    if support_email:
+        support_lines.append(
+            texts.t(
+                'INFO_HELP_SUPPORT_EMAIL_LINE',
+                '• Поддержка почта: <code>{email}</code>',
+            ).format(email=support_email)
         )
-    )
+    if tickets_enabled:
+        support_lines.append(
+            texts.t(
+                'INFO_HELP_SUPPORT_TICKET_LINE',
+                '• Поддержка c помощью тикета: Кнопка «Создать обращение»',
+            )
+        )
 
     doc_lines: list[str] = []
     if privacy_url:
@@ -61,17 +74,17 @@ def build_help_contacts_screen(
             ).format(url=agreement_url, read=read)
         )
 
-    if contact_lines:
-        caption += '\n\n' + '\n'.join(contact_lines)
+    if support_lines:
+        caption += '\n\n' + '\n'.join(support_lines)
     if doc_lines:
         caption += '\n\n' + '\n'.join(doc_lines)
 
     rows: list[list[types.InlineKeyboardButton]] = []
-    if support_url:
+    if tickets_enabled:
         rows.append([
             types.InlineKeyboardButton(
-                text=texts.t('INFO_MENU_SUPPORT', 'Поддержка'),
-                callback_data='menu_support',
+                text=texts.t('INFO_MENU_CREATE_TICKET', 'Создать обращение'),
+                callback_data='support_request',
             )
         ])
     if privacy_url:

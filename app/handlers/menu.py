@@ -483,15 +483,24 @@ async def show_info_menu(
         support_enabled = settings.SUPPORT_MENU_ENABLED
 
     support_url = settings.get_support_contact_url() or ''
+    support_email = settings.get_support_email()
+    try:
+        tickets_enabled = SupportSettingsService.is_tickets_enabled()
+    except Exception:
+        tickets_enabled = True
     if not support_enabled:
         support_url = ''
+        support_email = ''
+        tickets_enabled = False
 
     caption, rows = build_help_contacts_screen(
         texts,
         support_username=settings.SUPPORT_USERNAME,
         support_url=support_url,
+        support_email=support_email,
         privacy_url=(settings.PRIVACY_POLICY_URL or '').strip(),
         agreement_url=(settings.USER_AGREEMENT_URL or '').strip(),
+        tickets_enabled=tickets_enabled,
     )
 
     await edit_or_answer_photo(

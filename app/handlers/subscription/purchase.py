@@ -817,6 +817,8 @@ async def show_install_guide_devices(callback: types.CallbackQuery, db_user: Use
         happ_android_url=settings.get_happ_download_link('android') or '',
         happ_windows_url=settings.get_happ_download_link('windows') or '',
         incy_url=settings.get_incy_download_link() or '',
+        incy_android_url=settings.get_incy_download_link_android() or '',
+        incy_windows_url=settings.get_incy_download_link_windows() or '',
         subscription_link=link or '',
         happ_redirect_url=(get_happ_cryptolink_redirect_link(link) or '') if link else '',
         incy_redirect_url=(get_incy_redirect_link(link) or '') if link else '',
