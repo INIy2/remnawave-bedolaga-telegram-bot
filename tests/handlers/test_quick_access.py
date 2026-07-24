@@ -112,3 +112,51 @@ async def test_open_via_adapter_logo_mode(monkeypatch):
     source.answer_photo.assert_awaited_once()      # фото-placeholder
     source.answer.assert_not_awaited()             # текстовый путь не задействован
     assert handler.await_args.args[0].message is placeholder
+
+
+@pytest.mark.asyncio
+async def test_connect_routes_to_paywall_without_subscription(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.handlers import quick_access
+
+    calls = {}
+
+    async def fake_open(source, bot, handler, **kwargs):
+        calls['handler'] = handler
+        calls['kwargs'] = kwargs
+
+    monkeypatch.setattr(quick_access, '_open_via_adapter', fake_open)
+
+    import app.handlers.subscription.purchase as purchase
+
+    message = MagicMock()
+    db_user = SimpleNamespace(subscriptions=[], language='ru')
+
+    await quick_access._route_connect(message, bot='BOT', db_user=db_user, db='DB', state='ST')
+
+    assert calls['handler'] is purchase.start_subscription_purchase
+    assert calls['kwargs'] == {'state': 'ST', 'db_user': db_user, 'db': 'DB'}
+
+
+@pytest.mark.asyncio
+async def test_connect_routes_to_guide_with_subscription(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.handlers import quick_access
+
+    calls = {}
+
+    async def fake_open(source, bot, handler, **kwargs):
+        calls['handler'] = handler
+
+    monkeypatch.setattr(quick_access, '_open_via_adapter', fake_open)
+
+    import app.handlers.subscription.purchase as purchase
+
+    message = MagicMock()
+    db_user = SimpleNamespace(subscriptions=[SimpleNamespace(is_active=True, actual_status='active')], language='ru')
+
+    await quick_access._route_connect(message, bot='BOT', db_user=db_user, db='DB', state='ST')
+
+    assert calls['handler'] is purchase.show_install_guide_devices

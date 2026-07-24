@@ -100,3 +100,66 @@ def _has_active_subscription(db_user) -> bool:
         getattr(s, 'is_active', False) or getattr(s, 'actual_status', None) == 'limited'
         for s in subs
     )
+
+
+async def _route_connect(message, *, bot, db_user, db, state) -> None:
+    from app.handlers.subscription.purchase import (
+        show_install_guide_devices,
+        start_subscription_purchase,
+    )
+
+    if _has_active_subscription(db_user):
+        await _open_via_adapter(message, bot, show_install_guide_devices, db_user=db_user, db=db)
+    else:
+        await _open_via_adapter(message, bot, start_subscription_purchase, state=state, db_user=db_user, db=db)
+
+
+async def _route_pay(message, *, bot, db_user, db, state) -> None:
+    from app.handlers.subscription.purchase import start_subscription_purchase
+
+    await _open_via_adapter(message, bot, start_subscription_purchase, state=state, db_user=db_user, db=db)
+
+
+async def _route_referrals(message, *, bot, db_user, db) -> None:
+    from app.handlers.referral import show_referral_info
+
+    await _open_via_adapter(message, bot, show_referral_info, db_user=db_user, db=db)
+
+
+async def _route_info(message, *, bot, db_user, db) -> None:
+    from app.handlers.menu import show_info_menu
+
+    await _open_via_adapter(message, bot, show_info_menu, db_user=db_user, db=db)
+
+
+async def _route_support(message, *, bot, db_user) -> None:
+    from app.handlers.support import show_support_info
+
+    await _open_via_adapter(message, bot, show_support_info, db_user=db_user)
+
+
+async def _route_promo(message, *, db_user, state) -> None:
+    from app.keyboards.inline import get_back_keyboard
+    from app.states import PromoCodeStates
+
+    texts = get_texts(db_user.language)
+    await message.answer(texts.PROMOCODE_ENTER, reply_markup=get_back_keyboard(db_user.language))
+    await state.set_state(PromoCodeStates.waiting_for_code)
+    await state.update_data(_prev_state=None, _prev_data={})
+
+
+async def _route_doc(message, *, bot, db_user, db, url: str, label_key: str, label_default: str) -> None:
+    """Документ (политика/соглашение): при наличии URL — сообщение со ссылкой-кнопкой,
+    иначе фолбэк на инфо-экран (там документы показываются встроенно)."""
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    texts = get_texts(db_user.language)
+    url = (url or '').strip()
+    if not url:
+        await _route_info(message, bot=bot, db_user=db_user, db=db)
+        return
+
+    label = texts.t(label_key, label_default)
+    read = texts.t('INFO_HELP_READ', 'читать')
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=read, url=url)]])
+    await message.answer(label, reply_markup=kb)
