@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
+
 from aiogram.types import BotCommand, KeyboardButton, ReplyKeyboardMarkup
 
 from app.config import settings
@@ -63,7 +65,15 @@ class _MessageAsCallback:
         self.bot = bot
         self.data = None
 
-    async def answer(self, *args, **kwargs):
+    async def answer(self, text: str | None = None, show_alert: bool = False, **kwargs):
+        # На успешном пути рендер уже отредактировал .message в целевой экран, а
+        # финальный callback.answer() без текста — просто закрывает "часики": no-op.
+        # Но на ранних return-ветках хендлер отдаёт фидбек ТОЛЬКО через
+        # answer(text, show_alert=True) и не трогает .message — тогда показываем
+        # этот текст, чтобы не осталось висящего placeholder-сообщения.
+        if text:
+            with suppress(Exception):
+                await self.message.edit_text(text)
         return None
 
 

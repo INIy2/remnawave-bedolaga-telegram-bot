@@ -71,3 +71,44 @@ async def test_open_via_adapter_text_mode(monkeypatch):
     assert adapter.bot is bot
     assert handler.await_args.kwargs == {'db_user': 'U', 'db': 'DB'}
     await adapter.answer()  # awaitable no-op
+
+
+@pytest.mark.asyncio
+async def test_adapter_answer_surfaces_alert_text():
+    from app.handlers.quick_access import _MessageAsCallback
+
+    placeholder = MagicMock()
+    placeholder.edit_text = AsyncMock()
+    adapter = _MessageAsCallback(placeholder, MagicMock(), MagicMock())
+
+    # с текстом-алертом → редактируем placeholder
+    await adapter.answer('Реферальная программа отключена', show_alert=True)
+    placeholder.edit_text.assert_awaited_once_with('Реферальная программа отключена')
+
+    # без текста → no-op (не трогаем placeholder повторно)
+    placeholder.edit_text.reset_mock()
+    await adapter.answer()
+    placeholder.edit_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_open_via_adapter_logo_mode(monkeypatch):
+    from app.handlers import quick_access
+
+    monkeypatch.setattr(quick_access.settings, 'ENABLE_LOGO_MODE', True, raising=False)
+    import app.utils.message_patch as mp
+    monkeypatch.setattr(mp, 'LOGO_PATH', SimpleNamespace(exists=lambda: True), raising=False)
+    monkeypatch.setattr(mp, 'get_logo_media', lambda: 'LOGO', raising=False)
+
+    placeholder = MagicMock(name='placeholder')
+    source = MagicMock(name='source')
+    source.answer_photo = AsyncMock(return_value=placeholder)
+    source.answer = AsyncMock()
+    source.from_user = MagicMock()
+    handler = AsyncMock()
+
+    await quick_access._open_via_adapter(source, MagicMock(), handler, db_user='U')
+
+    source.answer_photo.assert_awaited_once()      # фото-placeholder
+    source.answer.assert_not_awaited()             # текстовый путь не задействован
+    assert handler.await_args.args[0].message is placeholder
