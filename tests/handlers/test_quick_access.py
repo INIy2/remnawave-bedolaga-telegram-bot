@@ -175,3 +175,29 @@ def test_register_handlers_wires_commands_and_reply_buttons():
 
     # 5 команд (без /start — он в start.py) + 5 reply-кнопок = 10 регистраций
     assert dp.message.register.call_count == 10
+
+
+def test_reply_button_text_variants_covers_all_languages(monkeypatch):
+    from app.handlers import quick_access
+
+    # эмулируем две локали: дефолт 'ru' и 'en' с переопределённым RK_CONNECT
+    # (settings — pydantic-модель: instance-level monkeypatch на метод падает с
+    # ValueError "object has no field", поэтому патчим на уровне класса)
+    monkeypatch.setattr(type(quick_access.settings), 'get_available_languages', lambda self: ['ru', 'en'])
+
+    real_get_texts = quick_access.get_texts
+
+    class _T:
+        def __init__(self, lang):
+            self._lang = lang
+
+        def t(self, key, default):
+            if self._lang == 'en' and key == 'RK_CONNECT':
+                return 'How to connect?'
+            return real_get_texts('ru').t(key, default)
+
+    monkeypatch.setattr(quick_access, 'get_texts', lambda lang='ru': _T(lang))
+
+    variants = quick_access._reply_button_text_variants()
+    assert 'Как подключиться?' in variants['connect']
+    assert 'How to connect?' in variants['connect']

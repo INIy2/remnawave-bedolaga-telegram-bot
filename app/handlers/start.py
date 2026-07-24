@@ -734,16 +734,19 @@ async def cmd_start(message: types.Message, state: FSMContext, db: AsyncSession,
 
     data = await state.get_data() or {}
 
-    # FreekVPN: ставим постоянную нижнюю клавиатуру быстрого доступа.
-    # Отдельным сообщением, т.к. reply- и inline-разметку нельзя совместить в одном.
-    _rk_lang = db_user.language if db_user else settings.DEFAULT_LANGUAGE
-    try:
-        await message.answer(
-            get_texts(_rk_lang).t('RK_INSTALL_HINT', 'Меню всегда под рукой 👇'),
-            reply_markup=get_quick_reply_keyboard(_rk_lang),
-        )
-    except Exception as e:
-        logger.warning('Не удалось отправить reply-клавиатуру', error=e)
+    # FreekVPN: постоянная нижняя клавиатура быстрого доступа — ставим отдельным
+    # сообщением (reply- и inline-разметку нельзя совместить в одном) и ТОЛЬКО
+    # зарегистрированным юзерам. Во время онбординга (db_user is None) клавиатуру
+    # не показываем: иначе тап по её кнопке в состоянии ввода реф-кода/правил
+    # был бы принят за ввод кода.
+    if db_user is not None:
+        try:
+            await message.answer(
+                get_texts(db_user.language).t('RK_INSTALL_HINT', 'Меню всегда под рукой 👇'),
+                reply_markup=get_quick_reply_keyboard(db_user.language),
+            )
+        except Exception as e:
+            logger.warning('Не удалось отправить reply-клавиатуру', error=e)
 
     # ИСПРАВЛЕНИЕ БАГА: используем .get() вместо .pop() для campaign_notification_sent
     # pending_start_payload обрабатывается отдельно ниже

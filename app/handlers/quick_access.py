@@ -29,6 +29,20 @@ def _reply_button_texts(texts) -> dict[str, str]:
     }
 
 
+def _reply_button_text_variants() -> dict[str, set[str]]:
+    """Все языковые варианты текста каждой reply-кнопки — чтобы фильтр совпадал
+    с клавиатурой на любом языке пользователя (клавиатура строится под язык юзера,
+    а хендлеры регистрируются один раз при старте)."""
+    variants: dict[str, set[str]] = {
+        'connect': set(), 'promo': set(), 'privacy': set(),
+        'agreement': set(), 'support': set(),
+    }
+    for lang in settings.get_available_languages():
+        for key, text in _reply_button_texts(get_texts(lang)).items():
+            variants[key].add(text)
+    return variants
+
+
 def get_quick_reply_keyboard(language: str = 'ru') -> ReplyKeyboardMarkup:
     t = _reply_button_texts(get_texts(language))
     return ReplyKeyboardMarkup(
@@ -227,10 +241,10 @@ def register_handlers(dp: Dispatcher) -> None:
     dp.message.register(cmd_promo, Command('promo'))
     dp.message.register(cmd_info, Command('info'))
 
-    # Reply-кнопки — матчинг по тексту, только вне FSM-состояний
-    t = _reply_button_texts(get_texts(settings.DEFAULT_LANGUAGE))
-    dp.message.register(rk_connect, F.text == t['connect'], StateFilter(None))
-    dp.message.register(rk_promo, F.text == t['promo'], StateFilter(None))
-    dp.message.register(rk_privacy, F.text == t['privacy'], StateFilter(None))
-    dp.message.register(rk_agreement, F.text == t['agreement'], StateFilter(None))
-    dp.message.register(rk_support, F.text == t['support'], StateFilter(None))
+    # Reply-кнопки — матчинг по тексту (во всех языках сразу), только вне FSM-состояний
+    v = _reply_button_text_variants()
+    dp.message.register(rk_connect, F.text.in_(v['connect']), StateFilter(None))
+    dp.message.register(rk_promo, F.text.in_(v['promo']), StateFilter(None))
+    dp.message.register(rk_privacy, F.text.in_(v['privacy']), StateFilter(None))
+    dp.message.register(rk_agreement, F.text.in_(v['agreement']), StateFilter(None))
+    dp.message.register(rk_support, F.text.in_(v['support']), StateFilter(None))
