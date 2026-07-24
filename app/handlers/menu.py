@@ -1407,6 +1407,10 @@ async def _build_main_menu_status_card(user, texts, db: AsyncSession) -> str:
     subscription = getattr(user, 'subscription', None)
     now_utc = datetime.now(UTC)
 
+    from app.keyboards.inline import is_trial_available_for_user
+
+    trial_available = subscription is None and is_trial_available_for_user(user)
+
     lines: list[str] = [texts.t('MAIN_MENU_ACCESS_HEADER', '<b>Ваш доступ к Freek VPN</b>'), '']
 
     # Ссылка подключения
@@ -1459,15 +1463,25 @@ async def _build_main_menu_status_card(user, texts, db: AsyncSession) -> str:
     else:
         traffic = '—'
 
-    # Статы в blockquote (как выделенный блок в профиле)
-    lines.append(
-        texts.t(
-            'MAIN_MENU_STATS_BLOCK',
-            '<blockquote><b>Осталось:</b> {remaining}\n'
-            '<b>Устройства:</b> {devices}\n'
-            '<b>Трафик:</b> {traffic}</blockquote>',
-        ).format(remaining=remaining, devices=devices_text, traffic=traffic)
-    )
+    if trial_available:
+        # Триал ещё доступен (юзер мог пропустить кнопку под приветствием) —
+        # приглашаем забрать его кнопкой ниже вместо «Подписка не активна».
+        lines.append(
+            texts.t(
+                'MAIN_MENU_TRIAL_INVITE',
+                '<blockquote>🎁 Тебе доступно {days} дней бесплатно — забери кнопкой ниже.</blockquote>',
+            ).format(days=settings.TRIAL_DURATION_DAYS)
+        )
+    else:
+        # Статы в blockquote (как выделенный блок в профиле)
+        lines.append(
+            texts.t(
+                'MAIN_MENU_STATS_BLOCK',
+                '<blockquote><b>Осталось:</b> {remaining}\n'
+                '<b>Устройства:</b> {devices}\n'
+                '<b>Трафик:</b> {traffic}</blockquote>',
+            ).format(remaining=remaining, devices=devices_text, traffic=traffic)
+        )
 
     # Промо рефералов — тем же blockquote-стилем
     if settings.is_referral_program_enabled():

@@ -69,3 +69,46 @@ def test_menu_no_trial_button_when_unavailable(monkeypatch):
     monkeypatch.setattr(type(settings), 'is_cabinet_mode', lambda self: False)
     kb = get_main_menu_keyboard(language='ru', trial_available=False)
     assert _trial_button(kb) is None
+
+
+@pytest.mark.asyncio
+async def test_status_card_shows_trial_invite_when_available(monkeypatch):
+    from app.handlers.menu import _build_main_menu_status_card
+    from app.localization.texts import get_texts
+
+    monkeypatch.setattr(settings, 'TRIAL_DURATION_DAYS', 14)
+    monkeypatch.setattr(type(settings), 'is_trial_disabled_for_user', lambda self, at: False)
+    monkeypatch.setattr(type(settings), 'is_referral_program_enabled', lambda self: False)
+
+    class _User:
+        subscription = None
+        subscriptions = []
+        auth_type = 'telegram'
+
+        def is_trial_already_used(self):
+            return False
+
+    text = await _build_main_menu_status_card(_User(), get_texts('ru'), db=None)
+    assert '14' in text
+    assert 'Подписка не активна' not in text
+
+
+@pytest.mark.asyncio
+async def test_status_card_shows_none_when_trial_used(monkeypatch):
+    from app.handlers.menu import _build_main_menu_status_card
+    from app.localization.texts import get_texts
+
+    monkeypatch.setattr(settings, 'TRIAL_DURATION_DAYS', 14)
+    monkeypatch.setattr(type(settings), 'is_trial_disabled_for_user', lambda self, at: False)
+    monkeypatch.setattr(type(settings), 'is_referral_program_enabled', lambda self: False)
+
+    class _User:
+        subscription = None
+        subscriptions = [object()]  # есть подписка → триал использован
+        auth_type = 'telegram'
+
+        def is_trial_already_used(self):
+            return True
+
+    text = await _build_main_menu_status_card(_User(), get_texts('ru'), db=None)
+    assert 'Подписка не активна' in text
