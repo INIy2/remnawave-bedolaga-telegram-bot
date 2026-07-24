@@ -41,8 +41,9 @@ trial_available = settings.TRIAL_DURATION_DAYS > 0
 Когда `trial_available` — **первым рядом** добавляем кнопку:
 - текст: `texts.t('MENU_MAIN_GET_TRIAL', '🎁 Получить {days} дней').format(days=settings.TRIAL_DURATION_DAYS)`
 - `callback_data='trial_activate'`
-- **без `style`** → дефолтная **фиолетовая** кнопка (как «Подключиться»/«Рефералы»;
-  `style='success'` даёт зелёную, `style='primary'` — синюю).
+- **`style='primary'`** → **синяя** кнопка (контрастит с зелёной «Оплатить»
+  `style='success'`; дефолт без `style` — фиолетовый). В боте подтверждены только
+  три цвета: default (фиолетовый), `success` (зелёный), `primary` (синий).
 
 Ниже — как сейчас: «Оплатить» (зелёная, `style='success'`), «Подключиться» (при
 подписке), «Рефералы», «Сайт | Инфо». Когда `trial_available == False` — меню
@@ -100,7 +101,7 @@ trial_available = settings.TRIAL_DURATION_DAYS > 0
   включённым триалом; False если `is_trial_already_used()` / `TRIAL_DURATION_DAYS<=0` /
   триал отключён для типа юзера.
 - `get_main_menu_keyboard(..., trial_available=True)` содержит кнопку с
-  `callback_data='trial_activate'` и БЕЗ `style` (фиолетовая); при
+  `callback_data='trial_activate'` и `style='primary'` (синяя); при
   `trial_available=False` — не содержит.
 - `_build_main_menu_status_card(..., trial_available=True)` (без подписки) содержит
   строку-приглашение и НЕ содержит «Подписка не активна».
