@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from aiogram.types import ReplyKeyboardMarkup
 
 from app.handlers.quick_access import get_quick_reply_keyboard
@@ -28,3 +30,17 @@ def test_bot_commands_order_and_labels():
         ('promo', 'Ввести промокод'),
         ('info', 'Инфо'),
     ]
+
+
+def test_has_active_subscription():
+    from app.handlers.quick_access import _has_active_subscription
+
+    active = SimpleNamespace(is_active=True, actual_status='active')
+    limited = SimpleNamespace(is_active=False, actual_status='limited')
+    expired = SimpleNamespace(is_active=False, actual_status='expired')
+
+    assert _has_active_subscription(SimpleNamespace(subscriptions=[active])) is True
+    assert _has_active_subscription(SimpleNamespace(subscriptions=[limited])) is True
+    assert _has_active_subscription(SimpleNamespace(subscriptions=[expired])) is False
+    assert _has_active_subscription(SimpleNamespace(subscriptions=[])) is False
+    assert _has_active_subscription(SimpleNamespace(subscriptions=None)) is False

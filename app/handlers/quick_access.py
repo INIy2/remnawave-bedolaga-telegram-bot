@@ -48,3 +48,16 @@ def get_bot_commands(language: str = 'ru') -> list[BotCommand]:
         BotCommand(command='promo', description=texts.t('CMD_PROMO', 'Ввести промокод')),
         BotCommand(command='info', description=texts.t('CMD_INFO', 'Инфо')),
     ]
+
+
+def _has_active_subscription(db_user) -> bool:
+    """Проверить, есть ли у пользователя активная подписка.
+
+    Подписка считается активной, если is_active=True ИЛИ actual_status='limited'.
+    Зеркало логики из app/handlers/menu.py (lines 198-199).
+    """
+    subs = getattr(db_user, 'subscriptions', None) or []
+    return any(
+        getattr(s, 'is_active', False) or getattr(s, 'actual_status', None) == 'limited'
+        for s in subs
+    )
