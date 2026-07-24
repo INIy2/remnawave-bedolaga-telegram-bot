@@ -734,19 +734,32 @@ async def cmd_start(message: types.Message, state: FSMContext, db: AsyncSession,
 
     data = await state.get_data() or {}
 
-    # FreekVPN: постоянная нижняя клавиатура быстрого доступа — ставим отдельным
-    # сообщением (reply- и inline-разметку нельзя совместить в одном) и ТОЛЬКО
-    # зарегистрированным юзерам. Во время онбординга (db_user is None) клавиатуру
-    # не показываем: иначе тап по её кнопке в состоянии ввода реф-кода/правил
-    # был бы принят за ввод кода.
+    # FreekVPN: постоянная нижняя reply-клавиатура быстрого доступа — только
+    # зарегистрированным юзерам (во время онбординга db_user is None — иначе тап по
+    # кнопке в состоянии ввода реф-кода был бы принят за код). Reply-клавиатуру нельзя
+    # совместить с inline-меню в одном сообщении, поэтому шлём её отдельным техническим
+    # сообщением (через bot.send_message, мимо monkey-patch Message.answer, чтобы не
+    # подставлялся логотип) и сразу удаляем — клавиатура остаётся привязанной к чату.
+    # Ставим ОДИН РАЗ (флаг в Redis с TTL 7 дней), чтобы не мелькать на каждом /start.
+    # Если Redis недоступен, cache.get вернёт None → безопасно ставим каждый раз.
     if db_user is not None:
         try:
-            await message.answer(
-                get_texts(db_user.language).t('RK_INSTALL_HINT', 'Меню всегда под рукой 👇'),
-                reply_markup=get_quick_reply_keyboard(db_user.language),
-            )
+            from app.utils.cache import cache
+
+            _rk_flag = f'rk_installed:{db_user.id}'
+            if await cache.get(_rk_flag) is None:
+                _kb_msg = await message.bot.send_message(
+                    message.chat.id,
+                    '⌨️',
+                    reply_markup=get_quick_reply_keyboard(db_user.language),
+                )
+                try:
+                    await message.bot.delete_message(message.chat.id, _kb_msg.message_id)
+                except Exception:
+                    pass
+                await cache.set(_rk_flag, 1, expire=7 * 24 * 3600)
         except Exception as e:
-            logger.warning('Не удалось отправить reply-клавиатуру', error=e)
+            logger.warning('Не удалось поставить reply-клавиатуру', error=e)
 
     # ИСПРАВЛЕНИЕ БАГА: используем .get() вместо .pop() для campaign_notification_sent
     # pending_start_payload обрабатывается отдельно ниже
