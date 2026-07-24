@@ -300,7 +300,16 @@ async def setup_bot() -> tuple[Bot, Dispatcher]:
         logger.error('Ошибка запуска RemnaWave retry queue', error=e)
 
     try:
+        # Язык-агностичный дефолт-scope.
         await bot.set_my_commands(quick_access.get_bot_commands(settings.DEFAULT_LANGUAGE))
+        # Плюс явно на каждый доступный язык: иначе пустой language-specific список
+        # (напр. ru, заведённый когда-то через BotFather) шэдоушит дефолт, и клиент
+        # ru-юзера показывает только встроенный /start вместо нашего меню.
+        for lang in settings.get_available_languages():
+            try:
+                await bot.set_my_commands(quick_access.get_bot_commands(lang), language_code=lang)
+            except Exception as lang_error:
+                logger.warning('Меню команд для языка не установлено', language=lang, error=lang_error)
         logger.info('📋 Меню команд установлено')
     except Exception as e:
         logger.warning('Не удалось установить меню команд', error=e)
