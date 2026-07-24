@@ -568,6 +568,22 @@ def _build_cabinet_main_menu_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
 
 
+def is_trial_available_for_user(user) -> bool:
+    """Гейт показа кнопки/подсказки триала в меню — те же условия, что проверяет
+    activate_trial перед выдачей. True, если триал юзеру ещё положен.
+    Требует загруженного user.subscriptions (для is_trial_already_used)."""
+    if user is None:
+        return False
+    if settings.TRIAL_DURATION_DAYS <= 0:
+        return False
+    if settings.is_trial_disabled_for_user(getattr(user, 'auth_type', 'telegram')):
+        return False
+    try:
+        return not user.is_trial_already_used()
+    except Exception:
+        return False
+
+
 def get_main_menu_keyboard(
     language: str = DEFAULT_LANGUAGE,
     is_admin: bool = False,
