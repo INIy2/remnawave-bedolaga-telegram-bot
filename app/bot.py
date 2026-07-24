@@ -12,6 +12,7 @@ from app.handlers import (
     menu,
     polls as user_polls,
     promocode,
+    quick_access,
     referral,
     server_status,
     simple_subscription,
@@ -177,6 +178,7 @@ async def setup_bot() -> tuple[Bot, Dispatcher]:
     dp.callback_query.middleware(SubscriptionStatusMiddleware())
     dp.pre_checkout_query.middleware(SubscriptionStatusMiddleware())
     start.register_handlers(dp)
+    quick_access.register_handlers(dp)
     menu.register_handlers(dp)
     subscription.register_handlers(dp)
     balance.register_balance_handlers(dp)
@@ -296,6 +298,12 @@ async def setup_bot() -> tuple[Bot, Dispatcher]:
         logger.info('RemnaWave retry queue запущен')
     except Exception as e:
         logger.error('Ошибка запуска RemnaWave retry queue', error=e)
+
+    try:
+        await bot.set_my_commands(quick_access.get_bot_commands(settings.DEFAULT_LANGUAGE))
+        logger.info('📋 Меню команд установлено')
+    except Exception as e:
+        logger.warning('Не удалось установить меню команд', error=e)
 
     logger.info('Бот успешно настроен')
 
