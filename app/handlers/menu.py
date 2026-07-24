@@ -1409,7 +1409,7 @@ async def _build_main_menu_status_card(user, texts, db: AsyncSession) -> str:
 
     from app.keyboards.inline import is_trial_available_for_user
 
-    trial_available = subscription is None and is_trial_available_for_user(user)
+    trial_available = is_trial_available_for_user(user)
 
     lines: list[str] = [texts.t('MAIN_MENU_ACCESS_HEADER', '<b>Ваш доступ к Freek VPN</b>'), '']
 

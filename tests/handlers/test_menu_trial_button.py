@@ -41,6 +41,22 @@ def test_trial_unavailable_when_user_none():
     assert is_trial_available_for_user(None) is False
 
 
+def test_trial_unavailable_when_restricted(monkeypatch):
+    monkeypatch.setattr(settings, 'TRIAL_DURATION_DAYS', 14)
+    monkeypatch.setattr(type(settings), 'is_trial_disabled_for_user', lambda self, at: False)
+    u = _FakeUser(used=False)
+    u.restriction_subscription = True
+    assert is_trial_available_for_user(u) is False
+
+
+def test_trial_unavailable_when_user_has_subscription(monkeypatch):
+    monkeypatch.setattr(settings, 'TRIAL_DURATION_DAYS', 14)
+    monkeypatch.setattr(type(settings), 'is_trial_disabled_for_user', lambda self, at: False)
+    u = _FakeUser(used=False)
+    u.subscription = object()  # любая подписка → триал в меню не предлагаем
+    assert is_trial_available_for_user(u) is False
+
+
 from app.keyboards.inline import get_main_menu_keyboard
 
 

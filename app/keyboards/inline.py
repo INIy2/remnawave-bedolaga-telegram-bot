@@ -571,13 +571,18 @@ def _build_cabinet_main_menu_keyboard(
 
 def is_trial_available_for_user(user) -> bool:
     """Гейт показа кнопки/подсказки триала в меню — те же условия, что проверяет
-    activate_trial перед выдачей. True, если триал юзеру ещё положен.
-    Требует загруженного user.subscriptions (для is_trial_already_used)."""
+    activate_trial перед выдачей (вкл. restriction_subscription). True, если триал
+    юзеру ещё положен и у него нет подписки. Требует загруженного user.subscriptions
+    (для is_trial_already_used); user.subscription — property поверх него."""
     if user is None:
+        return False
+    if getattr(user, 'restriction_subscription', False):
         return False
     if settings.TRIAL_DURATION_DAYS <= 0:
         return False
     if settings.is_trial_disabled_for_user(getattr(user, 'auth_type', 'telegram')):
+        return False
+    if getattr(user, 'subscription', None) is not None:
         return False
     try:
         return not user.is_trial_already_used()
