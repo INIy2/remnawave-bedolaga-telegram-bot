@@ -25,6 +25,7 @@ from app.database.crud.user import (
 )
 from app.database.crud.user_message import get_random_active_message
 from app.database.models import GuestPurchase, GuestPurchaseStatus, PinnedMessage, SubscriptionStatus, UserStatus
+from app.handlers.quick_access import get_quick_reply_keyboard
 from app.keyboards.inline import (
     get_back_keyboard,
     get_language_selection_keyboard,
@@ -732,6 +733,17 @@ async def cmd_start(message: types.Message, state: FSMContext, db: AsyncSession,
     logger.info('🚀 START: Обработка /start от', from_user_id=message.from_user.id)
 
     data = await state.get_data() or {}
+
+    # FreekVPN: ставим постоянную нижнюю клавиатуру быстрого доступа.
+    # Отдельным сообщением, т.к. reply- и inline-разметку нельзя совместить в одном.
+    _rk_lang = db_user.language if db_user else settings.DEFAULT_LANGUAGE
+    try:
+        await message.answer(
+            get_texts(_rk_lang).t('RK_INSTALL_HINT', 'Меню всегда под рукой 👇'),
+            reply_markup=get_quick_reply_keyboard(_rk_lang),
+        )
+    except Exception as e:
+        logger.warning('Не удалось отправить reply-клавиатуру', error=e)
 
     # ИСПРАВЛЕНИЕ БАГА: используем .get() вместо .pop() для campaign_notification_sent
     # pending_start_payload обрабатывается отдельно ниже
