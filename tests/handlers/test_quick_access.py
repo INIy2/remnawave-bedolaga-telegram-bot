@@ -14,3 +14,17 @@ def test_reply_keyboard_layout():
         ['Политика конфиденциальности', 'Пользовательское соглашение'],
         ['Поддержка'],
     ]
+
+
+def test_bot_commands_order_and_labels():
+    from app.handlers.quick_access import get_bot_commands
+
+    cmds = get_bot_commands('ru')
+    assert [(c.command, c.description) for c in cmds] == [
+        ('start', 'Главное меню'),
+        ('connect', 'Как подключиться?'),
+        ('pay', 'Оплатить'),
+        ('referrals', 'Рефералы'),
+        ('promo', 'Ввести промокод'),
+        ('info', 'Инфо'),
+    ]

@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import BotCommand, KeyboardButton, ReplyKeyboardMarkup
 
 from app.config import settings
 from app.localization.texts import get_texts
@@ -36,3 +36,15 @@ def get_quick_reply_keyboard(language: str = 'ru') -> ReplyKeyboardMarkup:
         resize_keyboard=True,
         is_persistent=True,
     )
+
+
+def get_bot_commands(language: str = 'ru') -> list[BotCommand]:
+    texts = get_texts(language)
+    return [
+        BotCommand(command='start', description=texts.t('CMD_START', 'Главное меню')),
+        BotCommand(command='connect', description=texts.t('CMD_CONNECT', 'Как подключиться?')),
+        BotCommand(command='pay', description=texts.t('CMD_PAY', 'Оплатить')),
+        BotCommand(command='referrals', description=texts.t('CMD_REFERRALS', 'Рефералы')),
+        BotCommand(command='promo', description=texts.t('CMD_PROMO', 'Ввести промокод')),
+        BotCommand(command='info', description=texts.t('CMD_INFO', 'Инфо')),
+    ]
