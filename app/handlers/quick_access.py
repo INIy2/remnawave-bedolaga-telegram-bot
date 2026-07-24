@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from contextlib import suppress
 
+from aiogram import Dispatcher, F
+from aiogram.filters import Command, StateFilter
 from aiogram.types import BotCommand, KeyboardButton, ReplyKeyboardMarkup
 
 from app.config import settings
@@ -163,3 +165,72 @@ async def _route_doc(message, *, bot, db_user, db, url: str, label_key: str, lab
     read = texts.t('INFO_HELP_READ', 'читать')
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=read, url=url)]])
     await message.answer(label, reply_markup=kb)
+
+
+# --- Command handlers (aiogram инжектит db_user/db/state/bot по сигнатуре) ---
+
+async def cmd_connect(message, db_user, db, state, bot):
+    await _route_connect(message, bot=bot, db_user=db_user, db=db, state=state)
+
+
+async def cmd_pay(message, db_user, db, state, bot):
+    await _route_pay(message, bot=bot, db_user=db_user, db=db, state=state)
+
+
+async def cmd_referrals(message, db_user, db, bot):
+    await _route_referrals(message, bot=bot, db_user=db_user, db=db)
+
+
+async def cmd_info(message, db_user, db, bot):
+    await _route_info(message, bot=bot, db_user=db_user, db=db)
+
+
+async def cmd_promo(message, db_user, state):
+    await _route_promo(message, db_user=db_user, state=state)
+
+
+# --- Reply-button handlers ---
+
+async def rk_connect(message, db_user, db, state, bot):
+    await _route_connect(message, bot=bot, db_user=db_user, db=db, state=state)
+
+
+async def rk_promo(message, db_user, state):
+    await _route_promo(message, db_user=db_user, state=state)
+
+
+async def rk_support(message, db_user, bot):
+    await _route_support(message, bot=bot, db_user=db_user)
+
+
+async def rk_privacy(message, db_user, db, bot):
+    await _route_doc(
+        message, bot=bot, db_user=db_user, db=db,
+        url=settings.PRIVACY_POLICY_URL, label_key='INFO_MENU_PRIVACY',
+        label_default='Политика конфиденциальности',
+    )
+
+
+async def rk_agreement(message, db_user, db, bot):
+    await _route_doc(
+        message, bot=bot, db_user=db_user, db=db,
+        url=settings.USER_AGREEMENT_URL, label_key='INFO_MENU_AGREEMENT',
+        label_default='Пользовательское соглашение',
+    )
+
+
+def register_handlers(dp: Dispatcher) -> None:
+    # Команды (/start регистрируется в start.py — здесь не дублируем)
+    dp.message.register(cmd_connect, Command('connect'))
+    dp.message.register(cmd_pay, Command('pay'))
+    dp.message.register(cmd_referrals, Command('referrals'))
+    dp.message.register(cmd_promo, Command('promo'))
+    dp.message.register(cmd_info, Command('info'))
+
+    # Reply-кнопки — матчинг по тексту, только вне FSM-состояний
+    t = _reply_button_texts(get_texts(settings.DEFAULT_LANGUAGE))
+    dp.message.register(rk_connect, F.text == t['connect'], StateFilter(None))
+    dp.message.register(rk_promo, F.text == t['promo'], StateFilter(None))
+    dp.message.register(rk_privacy, F.text == t['privacy'], StateFilter(None))
+    dp.message.register(rk_agreement, F.text == t['agreement'], StateFilter(None))
+    dp.message.register(rk_support, F.text == t['support'], StateFilter(None))

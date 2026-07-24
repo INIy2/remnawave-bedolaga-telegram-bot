@@ -160,3 +160,18 @@ async def test_connect_routes_to_guide_with_subscription(monkeypatch):
     await quick_access._route_connect(message, bot='BOT', db_user=db_user, db='DB', state='ST')
 
     assert calls['handler'] is purchase.show_install_guide_devices
+
+
+def test_register_handlers_wires_commands_and_reply_buttons():
+    from unittest.mock import MagicMock
+
+    from app.handlers import quick_access
+
+    dp = MagicMock()
+    dp.message = MagicMock()
+    dp.message.register = MagicMock()
+
+    quick_access.register_handlers(dp)
+
+    # 5 команд (без /start — он в start.py) + 5 reply-кнопок = 10 регистраций
+    assert dp.message.register.call_count == 10
