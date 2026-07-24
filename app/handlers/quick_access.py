@@ -50,6 +50,35 @@ def get_bot_commands(language: str = 'ru') -> list[BotCommand]:
     ]
 
 
+class _MessageAsCallback:
+    """Минимальный адаптер: выдаёт себя за CallbackQuery для рендеров экранов.
+
+    Рендеры используют .message (редактируют его), .from_user, .bot и awaitable
+    .answer(...). Мы подставляем свежесозданное сообщение бота как .message.
+    """
+
+    def __init__(self, message, from_user, bot):
+        self.message = message
+        self.from_user = from_user
+        self.bot = bot
+        self.data = None
+
+    async def answer(self, *args, **kwargs):
+        return None
+
+
+async def _open_via_adapter(source_message, bot, handler, **kwargs) -> None:
+    from app.utils.message_patch import LOGO_PATH, get_logo_media
+
+    if settings.ENABLE_LOGO_MODE and LOGO_PATH.exists():
+        placeholder = await source_message.answer_photo(get_logo_media(), caption='…')
+    else:
+        placeholder = await source_message.answer('…')
+
+    adapter = _MessageAsCallback(placeholder, source_message.from_user, bot)
+    await handler(adapter, **kwargs)
+
+
 def _has_active_subscription(db_user) -> bool:
     """Проверить, есть ли у пользователя активная подписка.
 
