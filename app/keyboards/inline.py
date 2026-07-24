@@ -152,6 +152,7 @@ async def get_main_menu_keyboard_async(
         has_saved_cart=has_saved_cart,
         is_moderator=is_moderator,
         custom_buttons=custom_buttons,
+        trial_available=is_trial_available_for_user(user),
     )
 
 
@@ -597,6 +598,7 @@ def get_main_menu_keyboard(
     *,
     is_moderator: bool = False,
     custom_buttons: list[InlineKeyboardButton] | None = None,
+    trial_available: bool = False,
 ) -> InlineKeyboardMarkup:
     texts = get_texts(language)
 
@@ -625,6 +627,19 @@ def get_main_menu_keyboard(
     # выделенные экраны (menu_profile / menu_referrals / menu_info). Прочие разделы
     # (баланс, промокод, поддержка, конкурсы, язык, докупка трафика) убраны из меню.
     keyboard: list[list[InlineKeyboardButton]] = []
+
+    # Синяя кнопка активации триала — только если триал ещё доступен. Ведёт на тот
+    # же trial_activate, что и кнопка под приветствием (юзер мог её пропустить).
+    if trial_available:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=texts.t('MENU_MAIN_GET_TRIAL', '🎁 Получить {days} дней').format(
+                    days=settings.TRIAL_DURATION_DAYS
+                ),
+                callback_data='trial_activate',
+                style='primary',
+            )
+        ])
 
     # Ряд 1: Оплатить (во всю ширину, зелёная — Bot API style='success')
     keyboard.append(
