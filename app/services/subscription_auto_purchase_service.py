@@ -1053,14 +1053,14 @@ async def _auto_purchase_tariff(
 
             message = texts.t(
                 'AUTO_PURCHASE_SUBSCRIPTION_SUCCESS',
-                '✅ Подписка на {period} автоматически оформлена после пополнения баланса.',
+                '<b>Подписка оформлена</b>\n\nПериод: {period}',
             ).format(period=period_label)
             if settings.is_multi_tariff_enabled() and tariff_name_for_label:
                 message += f'\n📦 Тариф: «{tariff_name_for_label}»'
 
             hint = texts.t(
                 'AUTO_PURCHASE_SUBSCRIPTION_HINT',
-                'Перейдите в раздел «Моя подписка», чтобы получить ссылку.',
+                'Ссылка на подключение и инструкции — на главной.',
             )
 
             # Одна кнопка вместо двух: на главной уже есть и ссылка на

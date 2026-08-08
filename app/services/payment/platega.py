@@ -479,7 +479,27 @@ class PlategaPaymentMixin:
 
         method_title = settings.get_platega_method_display_title(payment.payment_method_code)
 
-        if getattr(self, 'bot', None) and user.telegram_id:
+        # Сначала пробуем оформить подписку из корзины и только потом решаем,
+        # показывать ли «Пополнение успешно». Порядок важен: если человек
+        # покупал тариф, он ждёт подписку, а не отчёт о зачислении на счёт.
+        cart_completed = False
+        try:
+            from app.services.payment.common import send_cart_notification_after_topup
+
+            cart_completed = await send_cart_notification_after_topup(
+                user, payment.amount_kopeks, db, getattr(self, 'bot', None)
+            )
+        except Exception as error:
+            logger.error(
+                'Ошибка при работе с сохраненной корзиной для пользователя',
+                user_id=payment.user_id,
+                error=error,
+                exc_info=True,
+            )
+
+        # Подписка не оформилась (обычное пополнение счёта либо сбой покупки) —
+        # сообщаем о зачислении, иначе после оплаты человек не получит ничего.
+        if not cart_completed and getattr(self, 'bot', None) and user.telegram_id:
             try:
                 keyboard = await self.build_topup_success_keyboard(user)
                 await self.bot.send_message(
@@ -496,18 +516,6 @@ class PlategaPaymentMixin:
                 )
             except Exception as error:
                 logger.error('Ошибка отправки уведомления пользователю Platega', error=error)
-
-        try:
-            from app.services.payment.common import send_cart_notification_after_topup
-
-            await send_cart_notification_after_topup(user, payment.amount_kopeks, db, getattr(self, 'bot', None))
-        except Exception as error:
-            logger.error(
-                'Ошибка при работе с сохраненной корзиной для пользователя',
-                user_id=payment.user_id,
-                error=error,
-                exc_info=True,
-            )
 
         metadata['balance_change'] = {
             'old_balance': old_balance,
