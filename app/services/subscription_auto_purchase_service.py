@@ -1063,20 +1063,12 @@ async def _auto_purchase_tariff(
                 'Перейдите в раздел «Моя подписка», чтобы получить ссылку.',
             )
 
+            # Одна кнопка вместо двух: на главной уже есть и ссылка на
+            # подключение, и раздел «Как подключиться», поэтому отдельный
+            # вход в «Мою подписку» только дробит путь.
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text=texts.t('MY_SUBSCRIPTION_BUTTON', '📱 Моя подписка'),
-                            callback_data='menu_subscription',
-                        )
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            text=texts.t('BACK_TO_MAIN_MENU_BUTTON', '🏠 Главное меню'),
-                            callback_data='back_to_menu',
-                        )
-                    ],
+                    [InlineKeyboardButton(text='На главную', callback_data='back_to_menu')],
                 ]
             )
 
@@ -1415,20 +1407,12 @@ async def _auto_purchase_daily_tariff(
                 f'ℹ️ Вы можете приостановить подписку в любой момент.'
             )
 
+            # Одна кнопка вместо двух: на главной уже есть и ссылка на
+            # подключение, и раздел «Как подключиться», поэтому отдельный
+            # вход в «Мою подписку» только дробит путь.
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text=texts.t('MY_SUBSCRIPTION_BUTTON', '📱 Моя подписка'),
-                            callback_data='menu_subscription',
-                        )
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            text=texts.t('BACK_TO_MAIN_MENU_BUTTON', '🏠 Главное меню'),
-                            callback_data='back_to_menu',
-                        )
-                    ],
+                    [InlineKeyboardButton(text='На главную', callback_data='back_to_menu')],
                 ]
             )
 
@@ -1759,20 +1743,12 @@ async def _auto_add_devices(
                 price=texts.format_price(price_kopeks),
             )
 
+            # Одна кнопка вместо двух: на главной уже есть и ссылка на
+            # подключение, и раздел «Как подключиться», поэтому отдельный
+            # вход в «Мою подписку» только дробит путь.
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text=texts.t('MY_SUBSCRIPTION_BUTTON', '📱 Моя подписка'),
-                            callback_data='menu_subscription',
-                        )
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            text=texts.t('BACK_TO_MAIN_MENU_BUTTON', '🏠 Главное меню'),
-                            callback_data='back_to_menu',
-                        )
-                    ],
+                    [InlineKeyboardButton(text='На главную', callback_data='back_to_menu')],
                 ]
             )
 
@@ -2115,20 +2091,12 @@ async def _auto_add_traffic(
                 price=texts.format_price(price_kopeks),
             )
 
+            # Одна кнопка вместо двух: на главной уже есть и ссылка на
+            # подключение, и раздел «Как подключиться», поэтому отдельный
+            # вход в «Мою подписку» только дробит путь.
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text=texts.t('MY_SUBSCRIPTION_BUTTON', '📱 Моя подписка'),
-                            callback_data='menu_subscription',
-                        )
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            text=texts.t('BACK_TO_MAIN_MENU_BUTTON', '🏠 Главное меню'),
-                            callback_data='back_to_menu',
-                        )
-                    ],
+                    [InlineKeyboardButton(text='На главную', callback_data='back_to_menu')],
                 ]
             )
 

@@ -1301,24 +1301,16 @@ async def handle_custom_confirm(
         traffic_display = format_traffic(traffic_limit)
 
         await callback.message.edit_text(
-            f'🎉 <b>Подписка успешно оформлена!</b>\n\n'
-            f'📦 Тариф: <b>{html.escape(tariff.name)}</b>\n'
-            f'📊 Трафик: {traffic_display}\n'
-            f'📱 Устройств: {tariff.device_limit}\n'
-            f'📅 Период: {format_period(custom_days)}\n'
-            f'💰 Списано: {format_price_kopeks(total_price)}\n\n'
+            f'<b>Подписка оформлена</b>\n\n'
+            f'Тариф: <b>{html.escape(tariff.name)}</b>\n'
+            f'Трафик: {traffic_display}\n'
+            f'Устройств: {tariff.device_limit}\n'
+            f'Период: {format_period(custom_days)}\n'
+            f'Цена: {format_price_kopeks(total_price)}\n\n'
             f'Перейдите в раздел «Подписка» для подключения.',
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text='📱 Моя подписка',
-                            callback_data=f'sm:{subscription.id}'
-                            if settings.is_multi_tariff_enabled() and subscription
-                            else 'menu_subscription',
-                        )
-                    ],
-                    [InlineKeyboardButton(text=texts.BACK, callback_data='back_to_menu')],
+                    [InlineKeyboardButton(text='На главную', callback_data='back_to_menu')],
                 ]
             ),
             parse_mode='HTML',
@@ -1921,24 +1913,16 @@ async def confirm_tariff_purchase(
     traffic = format_traffic(tariff.traffic_limit_gb)
 
     await callback.message.edit_text(
-        f'🎉 <b>Подписка успешно оформлена!</b>\n\n'
-        f'📦 Тариф: <b>{html.escape(tariff.name)}</b>\n'
-        f'📊 Трафик: {traffic}\n'
-        f'📱 Устройств: {tariff.device_limit}\n'
-        f'📅 Период: {format_period(period)}\n'
-        f'💰 Списано: {format_price_kopeks(final_price)}\n\n'
+        f'<b>Подписка оформлена</b>\n\n'
+        f'Тариф: <b>{html.escape(tariff.name)}</b>\n'
+        f'Трафик: {traffic}\n'
+        f'Устройств: {tariff.device_limit}\n'
+        f'Период: {format_period(period)}\n'
+        f'Цена: {format_price_kopeks(final_price)}\n\n'
         f'Перейдите в раздел «Подписка» для подключения.',
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text='📱 Моя подписка',
-                        callback_data=f'sm:{subscription.id}'
-                        if settings.is_multi_tariff_enabled() and subscription
-                        else 'menu_subscription',
-                    )
-                ],
-                [InlineKeyboardButton(text=texts.BACK, callback_data='back_to_menu')],
+                [InlineKeyboardButton(text='На главную', callback_data='back_to_menu')],
             ]
         ),
         parse_mode='HTML',
