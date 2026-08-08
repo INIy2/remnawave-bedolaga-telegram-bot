@@ -352,23 +352,22 @@ def get_tariff_confirm_keyboard(
     tariff_id: int,
     period: int,
     language: str,
-    balance_kopeks: int | None = None,
+    price_kopeks: int | None = None,
 ) -> InlineKeyboardMarkup:
-    """Создает клавиатуру выбора способа оплаты тарифа.
+    """Создает клавиатуру подтверждения покупки, когда денег на счету хватает.
 
-    Сейчас единственный способ оплаты тарифа — списание с баланса
-    (внешние провайдеры лишь пополняют баланс). Когда онлайн-методы
-    включены, пользователь без нужной суммы уходит на экран пополнения
-    из ветки «недостаточно средств».
+    Средств достаточно (например, накопились реферальные), поэтому платить
+    внешним методом не нужно — списываем со счёта. Слово «баланс» покупателю
+    не показываем: для него это просто оплата тарифа.
     """
     texts = get_texts(language)
-    if balance_kopeks is not None:
-        balance_label = f'💰 Баланс ({format_price_kopeks(balance_kopeks)})'
+    if price_kopeks is not None and price_kopeks > 0:
+        pay_label = f'Оплатить {format_price_kopeks(price_kopeks)}'
     else:
-        balance_label = '💰 Оплатить с баланса'
+        pay_label = 'Оплатить'
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=balance_label, callback_data=f'tariff_confirm:{tariff_id}:{period}')],
+            [InlineKeyboardButton(text=pay_label, callback_data=f'tariff_confirm:{tariff_id}:{period}')],
             [InlineKeyboardButton(text=texts.BACK, callback_data=f'tariff_select:{tariff_id}')],
         ]
     )
@@ -391,6 +390,40 @@ def get_tariff_insufficient_balance_keyboard(
             [InlineKeyboardButton(text='← Другой тариф', callback_data='tariff_list')],
         ]
     )
+
+
+def get_tariff_direct_payment_keyboard(
+    tariff_id: int,
+    language: str,
+    amount_kopeks: int,
+) -> InlineKeyboardMarkup:
+    """Клавиатура прямой оплаты тарифа, без промежуточных экранов баланса.
+
+    Кнопки методов ведут сразу к созданию платежа на нужную сумму
+    (callback ``topup_amount|<method>|<amount>``), поэтому пользователь
+    не проходит через «Пополнить баланс» и выбор суммы. Деньги по-прежнему
+    зачисляются на баланс, а сохранённая корзина списывает их сразу после
+    оплаты — для пользователя это выглядит как прямая покупка тарифа.
+    """
+    from app.keyboards.inline import get_payment_methods_keyboard
+
+    keyboard = get_payment_methods_keyboard(amount_kopeks, language)
+
+    # Хвостовая кнопка «назад» у балансовой клавиатуры ведёт в меню баланса —
+    # в контексте покупки тарифа она не нужна, заменяем на возврат к тарифам.
+    if keyboard.inline_keyboard:
+        last_row = keyboard.inline_keyboard[-1]
+        if (
+            len(last_row) == 1
+            and isinstance(last_row[0], InlineKeyboardButton)
+            and last_row[0].callback_data in {'menu_balance', 'back_to_menu'}
+        ):
+            keyboard.inline_keyboard.pop()
+
+    keyboard.inline_keyboard.append(
+        [InlineKeyboardButton(text='← Другой тариф', callback_data=f'tariff_select:{tariff_id}')]
+    )
+    return keyboard
 
 
 def format_tariff_info_for_user(
@@ -1392,18 +1425,18 @@ async def select_tariff_period(
     user_balance = db_user.balance_kopeks or 0
 
     if user_balance >= final_price:
-        # Экран способа оплаты (сейчас доступна оплата с баланса)
-        discount_text = ''
+        # Средств на счету хватает (обычно накопились реферальные) —
+        # внешняя оплата не нужна, достаточно подтвердить покупку.
+        discount_line = ''
         if discount_percent > 0:
-            discount_text = f'🎁 Скидка: {discount_percent}% (−{format_price_kopeks(base_price - final_price)})\n'
+            discount_line = f'Скидка: {discount_percent}% (−{format_price_kopeks(base_price - final_price)})\n'
 
         await callback.message.edit_text(
-            f'💳 <b>Оплата тарифа</b>\n\n'
+            f'<b>Оплата</b>\n\n'
             f'<b>{html.escape(tariff.name)}</b> · {format_period(period)}\n'
-            f'💰 <b>{format_price_kopeks(final_price)}</b>\n'
-            f'{discount_text}\n'
-            f'Выберите способ оплаты:',
-            reply_markup=get_tariff_confirm_keyboard(tariff_id, period, db_user.language, balance_kopeks=user_balance),
+            f'<b>{format_price_kopeks(final_price)}</b>\n'
+            f'{discount_line}',
+            reply_markup=get_tariff_confirm_keyboard(tariff_id, period, db_user.language, price_kopeks=final_price),
             parse_mode='HTML',
         )
     else:
@@ -1437,14 +1470,28 @@ async def select_tariff_period(
         }
         await user_cart_service.save_user_cart(db_user.id, cart_data)
 
+        # Прямая оплата: сразу способы оплаты на недостающую сумму, без
+        # промежуточных экранов «Пополнить баланс» и выбора суммы.
+        discount_line = ''
+        if discount_percent > 0:
+            discount_line = f'Скидка: {discount_percent}% (−{format_price_kopeks(base_price - final_price)})\n'
+
+        # Если на счету что-то есть (например, реферальные), объясняем, почему
+        # к оплате сумма меньше цены тарифа — иначе выглядит как ошибка.
+        credit_line = ''
+        if user_balance > 0:
+            credit_line = (
+                f'{format_price_kopeks(user_balance)} спишется с вашего счёта, '
+                f'к оплате <b>{format_price_kopeks(missing)}</b>.\n'
+            )
+
         await callback.message.edit_text(
-            f'❌ <b>Недостаточно средств</b>\n\n'
-            f'На балансе {format_price_kopeks(user_balance)}, '
-            f'нужно ещё <b>{format_price_kopeks(missing)}</b> для этого тарифа.\n\n'
-            f'🛒 <i>Корзина сохранена — после пополнения тариф оформится автоматически.</i>',
-            reply_markup=get_tariff_insufficient_balance_keyboard(
-                tariff_id, period, db_user.language, missing_kopeks=missing
-            ),
+            f'<b>Оплата</b>\n\n'
+            f'<b>{html.escape(tariff.name)}</b> · {format_period(period)}\n'
+            f'<b>{format_price_kopeks(final_price)}</b>\n'
+            f'{discount_line}{credit_line}\n'
+            f'Выберите способ оплаты:',
+            reply_markup=get_tariff_direct_payment_keyboard(tariff_id, db_user.language, missing),
             parse_mode='HTML',
         )
 
