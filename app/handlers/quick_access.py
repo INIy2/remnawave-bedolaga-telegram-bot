@@ -56,38 +56,41 @@ def get_quick_reply_keyboard(language: str = 'ru') -> ReplyKeyboardMarkup:
     )
 
 
-# Как часто заново подвешиваем клавиатуру (самолечение, если юзер удалил носитель).
-RK_REFRESH_TTL_SECONDS = 7 * 24 * 3600
-# Ключ версионирован: v1 остался у юзеров с прежней (ломаной) установкой, смена
-# имени заставляет поставить клавиатуру заново уже на живом носителе.
-RK_FLAG_KEY = 'rk_installed_v2:{user_id}'
-RK_CARRIER_KEY = 'rk_carrier_msg:{user_id}'
+# Ключ хранит id сообщения-носителя клавиатуры и он же служит признаком
+# «уже поставили» — отдельный флаг не нужен. Версия в имени ключа — рычаг
+# переустановки всем сразу: старое имя просто перестаёт читаться (v1 остался
+# у юзеров с прежней, ломаной установкой).
+RK_CARRIER_KEY = 'rk_carrier_msg_v2:{user_id}'
 
 
 async def ensure_quick_reply_keyboard(bot, chat_id: int, db_user) -> None:
-    """Держит нижнюю reply-клавиатуру привязанной к ЖИВОМУ сообщению.
+    """Ставит нижнюю reply-клавиатуру ОДИН РАЗ, на постоянном сообщении-носителе.
 
     Reply-клавиатуру нельзя совместить с inline-меню в одном сообщении, поэтому
-    её несёт отдельное техническое сообщение. Удалять этот носитель НЕЛЬЗЯ:
-    клиент помнит id сообщения с разметкой и, не найдя его при пересинхронизации
-    (перезапуск приложения, другое устройство), сбрасывает клавиатуру — именно так
-    она у всех и пропадала. Поэтому носитель остаётся в чате, а предыдущий
-    удаляется уже ПОСЛЕ отправки нового: удаление НЕ актуального носителя
-    клавиатуру не сбрасывает, и в чате всегда ровно одно такое сообщение.
+    её несёт отдельное техническое сообщение. Удалять носитель НЕЛЬЗЯ: клиент
+    помнит id сообщения с разметкой и, не найдя его при пересинхронизации
+    (перезапуск приложения, другое устройство, чистка кэша), клавиатуру
+    сбрасывает — именно так она у всех и пропадала.
+
+    Периодически переставлять её тоже нельзя: deleteMessage работает только для
+    сообщений моложе 48 часов, значит прошлый носитель уже не удалить и в чате
+    копился бы лишний «⌨️» на каждое обновление. Поэтому ставим ровно один раз и
+    ничего не удаляем. Переустановить всем — сменить версию в RK_CARRIER_KEY;
+    одному юзеру — удалить его ключ в Redis.
 
     Шлём через bot.send_message мимо monkey-patch Message.answer→_answer_with_photo,
     иначе к техническому сообщению подставится логотип-карточка.
     """
     from app.utils.cache import cache
 
-    flag_key = RK_FLAG_KEY.format(user_id=db_user.id)
-    if await cache.get(flag_key) is not None:
+    carrier_key = RK_CARRIER_KEY.format(user_id=db_user.id)
+    if await cache.get(carrier_key) is not None:
         return
 
-    # Флаг ставим ДО отправки: если Redis недоступен, set вернёт False и мы просто
-    # выходим. Иначе (не читая флаг и не помня id носителя) мы слали бы новое
-    # техническое сообщение на КАЖДЫЙ /start и не могли удалять прежние.
-    if not await cache.set(flag_key, 1, expire=RK_REFRESH_TTL_SECONDS):
+    # Занимаем ключ ДО отправки: если Redis недоступен, set вернёт False и мы
+    # просто выходим. Иначе, не помня о прошлых носителях, слали бы новое
+    # техническое сообщение на КАЖДЫЙ /start.
+    if not await cache.set(carrier_key, 0):
         return
 
     texts = get_texts(db_user.language)
@@ -98,20 +101,14 @@ async def ensure_quick_reply_keyboard(bot, chat_id: int, db_user) -> None:
             reply_markup=get_quick_reply_keyboard(db_user.language),
         )
     except Exception:
-        # Не выгорело — снимаем флаг, чтобы повторить на следующем /start,
-        # а не оставить юзера без клавиатуры на неделю.
-        await cache.delete(flag_key)
+        # Не выгорело — освобождаем ключ, чтобы повторить на следующем /start,
+        # а не оставить юзера без клавиатуры навсегда.
+        await cache.delete(carrier_key)
         raise
 
-    carrier_key = RK_CARRIER_KEY.format(user_id=db_user.id)
-    previous_message_id = await cache.get(carrier_key)
-    # Запоминаем новый носитель до удаления старого: упавшее удаление не должно
-    # стоить нам id актуального сообщения.
+    # id носителя коду больше не нужен, но по нему видно, какое сообщение держит
+    # клавиатуру, — это единственный способ разобраться, если она снова пропадёт.
     await cache.set(carrier_key, carrier.message_id)
-
-    if previous_message_id and previous_message_id != carrier.message_id:
-        with suppress(Exception):
-            await bot.delete_message(chat_id, previous_message_id)
 
 
 def get_bot_commands(language: str = 'ru') -> list[BotCommand]:

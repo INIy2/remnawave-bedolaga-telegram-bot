@@ -249,13 +249,13 @@ def rk_cache(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_carrier_message_is_not_deleted(rk_cache):
+async def test_carrier_message_is_never_deleted(rk_cache):
     """Главное: носитель клавиатуры остаётся в чате.
 
     Раньше его удаляли сразу — клиент терял сообщение с разметкой и сбрасывал
     клавиатуру при следующей пересинхронизации.
     """
-    from app.handlers.quick_access import RK_CARRIER_KEY, RK_FLAG_KEY, ensure_quick_reply_keyboard
+    from app.handlers.quick_access import RK_CARRIER_KEY, ensure_quick_reply_keyboard
 
     cache = rk_cache(_FakeCache())
     bot = _rk_bot(message_id=500)
@@ -266,39 +266,38 @@ async def test_carrier_message_is_not_deleted(rk_cache):
     assert bot.send_message.await_args.kwargs['reply_markup'].is_persistent is True
     bot.delete_message.assert_not_awaited()
     assert cache.store[RK_CARRIER_KEY.format(user_id=44)] == 500
-    assert cache.store[RK_FLAG_KEY.format(user_id=44)] == 1
 
 
 @pytest.mark.asyncio
-async def test_previous_carrier_deleted_after_new_one_sent(rk_cache):
-    """Старый носитель удаляется, но только ПОСЛЕ отправки нового — иначе
-    удаление актуального носителя сбросило бы клавиатуру."""
-    from app.handlers.quick_access import RK_CARRIER_KEY, ensure_quick_reply_keyboard
+async def test_installed_only_once(rk_cache):
+    """Повторная установка запрещена: удалить прежний носитель мы всё равно не
+    сможем (deleteMessage — только моложе 48 часов), и «⌨️» копились бы в чате."""
+    from app.handlers.quick_access import ensure_quick_reply_keyboard
 
-    cache = rk_cache(_FakeCache(initial={RK_CARRIER_KEY.format(user_id=44): 300}))
-    bot = _rk_bot(message_id=501)
-    order: list[str] = []
-    bot.send_message = AsyncMock(side_effect=lambda *a, **kw: order.append('send') or SimpleNamespace(message_id=501))
-    bot.delete_message = AsyncMock(side_effect=lambda *a, **kw: order.append('delete'))
-
+    cache = rk_cache(_FakeCache())
+    bot = _rk_bot(message_id=500)
     await ensure_quick_reply_keyboard(bot, chat_id=777, db_user=_rk_user())
 
-    assert order == ['send', 'delete']
-    bot.delete_message.assert_awaited_once_with(777, 300)
-    assert cache.store[RK_CARRIER_KEY.format(user_id=44)] == 501
-
-
-@pytest.mark.asyncio
-async def test_skipped_while_flag_alive(rk_cache):
-    from app.handlers.quick_access import RK_FLAG_KEY, ensure_quick_reply_keyboard
-
-    rk_cache(_FakeCache(initial={RK_FLAG_KEY.format(user_id=44): 1}))
-    bot = _rk_bot()
-
+    bot.send_message.reset_mock()
     await ensure_quick_reply_keyboard(bot, chat_id=777, db_user=_rk_user())
 
     bot.send_message.assert_not_awaited()
     bot.delete_message.assert_not_awaited()
+    assert len(cache.store) == 1
+
+
+@pytest.mark.asyncio
+async def test_key_version_bump_reinstalls(rk_cache):
+    """Ключ прошлой (ломаной) установки не должен мешать поставить клавиатуру
+    заново — иначе фикс не доехал бы до тех, у кого она уже «стояла»."""
+    from app.handlers.quick_access import ensure_quick_reply_keyboard
+
+    rk_cache(_FakeCache(initial={'rk_installed:44': 1, 'rk_carrier_msg:44': 300}))
+    bot = _rk_bot(message_id=501)
+
+    await ensure_quick_reply_keyboard(bot, chat_id=777, db_user=_rk_user())
+
+    bot.send_message.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -315,9 +314,9 @@ async def test_no_carrier_spam_when_redis_down(rk_cache):
 
 
 @pytest.mark.asyncio
-async def test_flag_released_when_send_fails(rk_cache):
-    """Упавшая отправка не должна оставлять юзера без клавиатуры на неделю."""
-    from app.handlers.quick_access import RK_FLAG_KEY, ensure_quick_reply_keyboard
+async def test_key_released_when_send_fails(rk_cache):
+    """Упавшая отправка не должна оставить юзера без клавиатуры навсегда."""
+    from app.handlers.quick_access import RK_CARRIER_KEY, ensure_quick_reply_keyboard
 
     cache = rk_cache(_FakeCache())
     bot = _rk_bot()
@@ -326,4 +325,4 @@ async def test_flag_released_when_send_fails(rk_cache):
     with pytest.raises(RuntimeError):
         await ensure_quick_reply_keyboard(bot, chat_id=777, db_user=_rk_user())
 
-    assert RK_FLAG_KEY.format(user_id=44) not in cache.store
+    assert RK_CARRIER_KEY.format(user_id=44) not in cache.store
