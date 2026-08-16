@@ -201,3 +201,129 @@ def test_reply_button_text_variants_covers_all_languages(monkeypatch):
     variants = quick_access._reply_button_text_variants()
     assert 'Как подключиться?' in variants['connect']
     assert 'How to connect?' in variants['connect']
+
+
+class _FakeCache:
+    """Мини-Redis: connected=False эмулирует недоступный Redis (set → False)."""
+
+    def __init__(self, connected: bool = True, initial: dict | None = None):
+        self.connected = connected
+        self.store: dict = dict(initial or {})
+
+    async def get(self, key):
+        return self.store.get(key)
+
+    async def set(self, key, value, expire=None):
+        if not self.connected:
+            return False
+        self.store[key] = value
+        return True
+
+    async def delete(self, key):
+        self.store.pop(key, None)
+        return True
+
+
+def _rk_user(user_id: int = 44, language: str = 'ru'):
+    return SimpleNamespace(id=user_id, language=language)
+
+
+def _rk_bot(message_id: int = 500):
+    bot = SimpleNamespace()
+    bot.send_message = AsyncMock(return_value=SimpleNamespace(message_id=message_id))
+    bot.delete_message = AsyncMock()
+    return bot
+
+
+@pytest.fixture
+def rk_cache(monkeypatch):
+    """Подменяет app.utils.cache.cache — импорт в функции идёт из модуля."""
+
+    def _install(cache):
+        import app.utils.cache as cache_module
+
+        monkeypatch.setattr(cache_module, 'cache', cache)
+        return cache
+
+    return _install
+
+
+@pytest.mark.asyncio
+async def test_carrier_message_is_not_deleted(rk_cache):
+    """Главное: носитель клавиатуры остаётся в чате.
+
+    Раньше его удаляли сразу — клиент терял сообщение с разметкой и сбрасывал
+    клавиатуру при следующей пересинхронизации.
+    """
+    from app.handlers.quick_access import RK_CARRIER_KEY, RK_FLAG_KEY, ensure_quick_reply_keyboard
+
+    cache = rk_cache(_FakeCache())
+    bot = _rk_bot(message_id=500)
+
+    await ensure_quick_reply_keyboard(bot, chat_id=777, db_user=_rk_user())
+
+    bot.send_message.assert_awaited_once()
+    assert bot.send_message.await_args.kwargs['reply_markup'].is_persistent is True
+    bot.delete_message.assert_not_awaited()
+    assert cache.store[RK_CARRIER_KEY.format(user_id=44)] == 500
+    assert cache.store[RK_FLAG_KEY.format(user_id=44)] == 1
+
+
+@pytest.mark.asyncio
+async def test_previous_carrier_deleted_after_new_one_sent(rk_cache):
+    """Старый носитель удаляется, но только ПОСЛЕ отправки нового — иначе
+    удаление актуального носителя сбросило бы клавиатуру."""
+    from app.handlers.quick_access import RK_CARRIER_KEY, ensure_quick_reply_keyboard
+
+    cache = rk_cache(_FakeCache(initial={RK_CARRIER_KEY.format(user_id=44): 300}))
+    bot = _rk_bot(message_id=501)
+    order: list[str] = []
+    bot.send_message = AsyncMock(side_effect=lambda *a, **kw: order.append('send') or SimpleNamespace(message_id=501))
+    bot.delete_message = AsyncMock(side_effect=lambda *a, **kw: order.append('delete'))
+
+    await ensure_quick_reply_keyboard(bot, chat_id=777, db_user=_rk_user())
+
+    assert order == ['send', 'delete']
+    bot.delete_message.assert_awaited_once_with(777, 300)
+    assert cache.store[RK_CARRIER_KEY.format(user_id=44)] == 501
+
+
+@pytest.mark.asyncio
+async def test_skipped_while_flag_alive(rk_cache):
+    from app.handlers.quick_access import RK_FLAG_KEY, ensure_quick_reply_keyboard
+
+    rk_cache(_FakeCache(initial={RK_FLAG_KEY.format(user_id=44): 1}))
+    bot = _rk_bot()
+
+    await ensure_quick_reply_keyboard(bot, chat_id=777, db_user=_rk_user())
+
+    bot.send_message.assert_not_awaited()
+    bot.delete_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_no_carrier_spam_when_redis_down(rk_cache):
+    """Без Redis мы не помним id носителя — слать новый на каждый /start нельзя."""
+    from app.handlers.quick_access import ensure_quick_reply_keyboard
+
+    rk_cache(_FakeCache(connected=False))
+    bot = _rk_bot()
+
+    await ensure_quick_reply_keyboard(bot, chat_id=777, db_user=_rk_user())
+
+    bot.send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_flag_released_when_send_fails(rk_cache):
+    """Упавшая отправка не должна оставлять юзера без клавиатуры на неделю."""
+    from app.handlers.quick_access import RK_FLAG_KEY, ensure_quick_reply_keyboard
+
+    cache = rk_cache(_FakeCache())
+    bot = _rk_bot()
+    bot.send_message = AsyncMock(side_effect=RuntimeError('telegram down'))
+
+    with pytest.raises(RuntimeError):
+        await ensure_quick_reply_keyboard(bot, chat_id=777, db_user=_rk_user())
+
+    assert RK_FLAG_KEY.format(user_id=44) not in cache.store

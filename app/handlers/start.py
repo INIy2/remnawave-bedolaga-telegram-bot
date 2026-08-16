@@ -25,7 +25,7 @@ from app.database.crud.user import (
 )
 from app.database.crud.user_message import get_random_active_message
 from app.database.models import GuestPurchase, GuestPurchaseStatus, PinnedMessage, SubscriptionStatus, UserStatus
-from app.handlers.quick_access import get_quick_reply_keyboard
+from app.handlers.quick_access import ensure_quick_reply_keyboard
 from app.keyboards.inline import (
     get_back_keyboard,
     get_language_selection_keyboard,
@@ -736,28 +736,11 @@ async def cmd_start(message: types.Message, state: FSMContext, db: AsyncSession,
 
     # FreekVPN: постоянная нижняя reply-клавиатура быстрого доступа — только
     # зарегистрированным юзерам (во время онбординга db_user is None — иначе тап по
-    # кнопке в состоянии ввода реф-кода был бы принят за код). Reply-клавиатуру нельзя
-    # совместить с inline-меню в одном сообщении, поэтому шлём её отдельным техническим
-    # сообщением (через bot.send_message, мимо monkey-patch Message.answer, чтобы не
-    # подставлялся логотип) и сразу удаляем — клавиатура остаётся привязанной к чату.
-    # Ставим ОДИН РАЗ (флаг в Redis с TTL 7 дней), чтобы не мелькать на каждом /start.
-    # Если Redis недоступен, cache.get вернёт None → безопасно ставим каждый раз.
+    # кнопке в состоянии ввода реф-кода был бы принят за код). Детали установки и
+    # почему сообщение-носитель нельзя удалять — в ensure_quick_reply_keyboard.
     if db_user is not None:
         try:
-            from app.utils.cache import cache
-
-            _rk_flag = f'rk_installed:{db_user.id}'
-            if await cache.get(_rk_flag) is None:
-                _kb_msg = await message.bot.send_message(
-                    message.chat.id,
-                    '⌨️',
-                    reply_markup=get_quick_reply_keyboard(db_user.language),
-                )
-                try:
-                    await message.bot.delete_message(message.chat.id, _kb_msg.message_id)
-                except Exception:
-                    pass
-                await cache.set(_rk_flag, 1, expire=7 * 24 * 3600)
+            await ensure_quick_reply_keyboard(message.bot, message.chat.id, db_user)
         except Exception as e:
             logger.warning('Не удалось поставить reply-клавиатуру', error=e)
 
