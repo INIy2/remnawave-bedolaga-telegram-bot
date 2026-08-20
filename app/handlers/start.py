@@ -25,7 +25,7 @@ from app.database.crud.user import (
 )
 from app.database.crud.user_message import get_random_active_message
 from app.database.models import GuestPurchase, GuestPurchaseStatus, PinnedMessage, SubscriptionStatus, UserStatus
-from app.handlers.quick_access import ensure_quick_reply_keyboard
+from app.handlers.quick_access import remove_quick_reply_keyboard
 from app.keyboards.inline import (
     get_back_keyboard,
     get_language_selection_keyboard,
@@ -734,15 +734,16 @@ async def cmd_start(message: types.Message, state: FSMContext, db: AsyncSession,
 
     data = await state.get_data() or {}
 
-    # FreekVPN: постоянная нижняя reply-клавиатура быстрого доступа — только
-    # зарегистрированным юзерам (во время онбординга db_user is None — иначе тап по
-    # кнопке в состоянии ввода реф-кода был бы принят за код). Детали установки и
-    # почему сообщение-носитель нельзя удалять — в ensure_quick_reply_keyboard.
+    # FreekVPN: от постоянной нижней reply-клавиатуры отказались (длинные подписи
+    # переносились в две строки; всё нужное есть в меню «/» и inline-кнопках).
+    # У тех, кому её раньше ставили, снимаем один раз. Только зарегистрированным
+    # юзерам (во время онбординга db_user is None). Детали — в
+    # remove_quick_reply_keyboard.
     if db_user is not None:
         try:
-            await ensure_quick_reply_keyboard(message.bot, message.chat.id, db_user)
+            await remove_quick_reply_keyboard(message.bot, message.chat.id, db_user)
         except Exception as e:
-            logger.warning('Не удалось поставить reply-клавиатуру', error=e)
+            logger.warning('Не удалось снять reply-клавиатуру', error=e)
 
     # ИСПРАВЛЕНИЕ БАГА: используем .get() вместо .pop() для campaign_notification_sent
     # pending_start_payload обрабатывается отдельно ниже

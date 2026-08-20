@@ -12,7 +12,7 @@ from contextlib import suppress
 
 from aiogram import Dispatcher, F
 from aiogram.filters import Command, StateFilter
-from aiogram.types import BotCommand, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import BotCommand, ReplyKeyboardRemove
 
 from app.config import settings
 from app.localization.texts import get_texts
@@ -43,72 +43,72 @@ def _reply_button_text_variants() -> dict[str, set[str]]:
     return variants
 
 
-def get_quick_reply_keyboard(language: str = 'ru') -> ReplyKeyboardMarkup:
-    t = _reply_button_texts(get_texts(language))
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=t['connect']), KeyboardButton(text=t['promo'])],
-            [KeyboardButton(text=t['privacy']), KeyboardButton(text=t['agreement'])],
-            [KeyboardButton(text=t['support'])],
-        ],
-        resize_keyboard=True,
-        is_persistent=True,
-    )
-
-
-# Ключ хранит id сообщения-носителя клавиатуры и он же служит признаком
-# «уже поставили» — отдельный флаг не нужен. Версия в имени ключа — рычаг
-# переустановки всем сразу: старое имя просто перестаёт читаться (v1 остался
-# у юзеров с прежней, ломаной установкой).
+# Ключ прежней установки: хранил id сообщения-носителя reply-клавиатуры. Больше
+# клавиатуру не ставим, но ключ читаем при снятии — по нему находим носитель,
+# чтобы удалить его (если моложе 48ч, удаление само сбрасывает клавиатуру).
 RK_CARRIER_KEY = 'rk_carrier_msg_v2:{user_id}'
 
+# Признак того, что нижняя reply-клавиатура у юзера уже снята, — чтобы не слать
+# ReplyKeyboardRemove на каждый /start.
+RK_REMOVED_KEY = 'rk_removed_v1:{user_id}'
 
-async def ensure_quick_reply_keyboard(bot, chat_id: int, db_user) -> None:
-    """Ставит нижнюю reply-клавиатуру ОДИН РАЗ, на постоянном сообщении-носителе.
 
-    Reply-клавиатуру нельзя совместить с inline-меню в одном сообщении, поэтому
-    её несёт отдельное техническое сообщение. Удалять носитель НЕЛЬЗЯ: клиент
-    помнит id сообщения с разметкой и, не найдя его при пересинхронизации
-    (перезапуск приложения, другое устройство, чистка кэша), клавиатуру
-    сбрасывает — именно так она у всех и пропадала.
+async def remove_quick_reply_keyboard(bot, chat_id: int, db_user) -> None:
+    """Снимает старую нижнюю reply-клавиатуру ОДИН РАЗ (у тех, кому её ставили).
 
-    Периодически переставлять её тоже нельзя: deleteMessage работает только для
-    сообщений моложе 48 часов, значит прошлый носитель уже не удалить и в чате
-    копился бы лишний «⌨️» на каждое обновление. Поэтому ставим ровно один раз и
-    ничего не удаляем. Переустановить всем — сменить версию в RK_CARRIER_KEY;
-    одному юзеру — удалить его ключ в Redis.
+    От постоянной reply-клавиатуры отказались: длинные подписи легальных
+    документов переносились в две строки и выглядели неряшливо, а всё нужное
+    доступно через меню команд «/» и inline-кнопки. Но persistent-клавиатура сама
+    не исчезает — её нужно явно снять ReplyKeyboardRemove.
+
+    Делаем это один раз на юзера (флаг RK_REMOVED_KEY). Сначала пробуем удалить
+    прежнее сообщение-носитель: если оно моложе 48ч, его удаление уже сбрасывает
+    клавиатуру (клиент, не найдя сообщение с разметкой, её убирает). Затем шлём
+    техническое сообщение с ReplyKeyboardRemove как надёжный путь и тоже удаляем
+    его — восстанавливать клавиатуру уже нечему, поэтому она остаётся снятой.
 
     Шлём через bot.send_message мимо monkey-patch Message.answer→_answer_with_photo,
     иначе к техническому сообщению подставится логотип-карточка.
     """
     from app.utils.cache import cache
 
+    removed_key = RK_REMOVED_KEY.format(user_id=db_user.id)
+    if await cache.get(removed_key) is not None:
+        return
+
+    # Занимаем флаг ДО отправки: если Redis недоступен, set вернёт False и мы
+    # просто выходим, а не шлём ReplyKeyboardRemove на КАЖДЫЙ /start.
+    if not await cache.set(removed_key, 1):
+        return
+
+    # Прежний носитель: если моложе 48ч — его удаление уже снимет клавиатуру.
     carrier_key = RK_CARRIER_KEY.format(user_id=db_user.id)
-    if await cache.get(carrier_key) is not None:
-        return
+    carrier_id = await cache.get(carrier_key)
+    if carrier_id:
+        try:
+            await bot.delete_message(chat_id, int(carrier_id))
+        except Exception:
+            pass  # старше 48ч или уже удалён — снимем через ReplyKeyboardRemove ниже
+        else:
+            await cache.delete(carrier_key)
 
-    # Занимаем ключ ДО отправки: если Redis недоступен, set вернёт False и мы
-    # просто выходим. Иначе, не помня о прошлых носителях, слали бы новое
-    # техническое сообщение на КАЖДЫЙ /start.
-    if not await cache.set(carrier_key, 0):
-        return
-
-    texts = get_texts(db_user.language)
+    # Надёжный путь: техническое сообщение с ReplyKeyboardRemove, затем удаляем его.
     try:
-        carrier = await bot.send_message(
-            chat_id,
-            texts.t('RK_CARRIER_MESSAGE', '⌨️'),
-            reply_markup=get_quick_reply_keyboard(db_user.language),
+        msg = await bot.send_message(
+            chat_id, '⌨️',
+            reply_markup=ReplyKeyboardRemove(),
+            disable_notification=True,
         )
     except Exception:
-        # Не выгорело — освобождаем ключ, чтобы повторить на следующем /start,
-        # а не оставить юзера без клавиатуры навсегда.
-        await cache.delete(carrier_key)
+        # Не вышло — отпускаем флаг, повторим на следующем /start, чтобы юзер не
+        # остался с висящей клавиатурой навсегда.
+        await cache.delete(removed_key)
         raise
 
-    # id носителя коду больше не нужен, но по нему видно, какое сообщение держит
-    # клавиатуру, — это единственный способ разобраться, если она снова пропадёт.
-    await cache.set(carrier_key, carrier.message_id)
+    try:
+        await bot.delete_message(chat_id, msg.message_id)
+    except Exception:
+        pass  # мы его только что отправили — обычно удаляется; остаток не критичен
 
 
 def get_bot_commands(language: str = 'ru') -> list[BotCommand]:
@@ -119,6 +119,7 @@ def get_bot_commands(language: str = 'ru') -> list[BotCommand]:
         BotCommand(command='pay', description=texts.t('CMD_PAY', 'Оплатить')),
         BotCommand(command='referrals', description=texts.t('CMD_REFERRALS', 'Рефералы')),
         BotCommand(command='promo', description=texts.t('CMD_PROMO', 'Ввести промокод')),
+        BotCommand(command='support', description=texts.t('CMD_SUPPORT', 'Поддержка')),
         BotCommand(command='info', description=texts.t('CMD_INFO', 'Инфо')),
     ]
 
@@ -258,7 +259,15 @@ async def cmd_promo(message, db_user, state):
     await _route_promo(message, db_user=db_user, state=state)
 
 
+async def cmd_support(message, db_user, bot):
+    await _route_support(message, bot=bot, db_user=db_user)
+
+
 # --- Reply-button handlers ---
+# Оставлены на время раскатки: пока юзер не сделает /start и старая нижняя
+# reply-клавиатура не снимется (см. remove_quick_reply_keyboard), его тап по
+# висящей кнопке должен по-прежнему открывать нужный экран. После того как
+# клавиатура снята у всех, эти обработчики можно удалить.
 
 async def rk_connect(message, db_user, db, state, bot):
     await _route_connect(message, bot=bot, db_user=db_user, db=db, state=state)
@@ -294,6 +303,7 @@ def register_handlers(dp: Dispatcher) -> None:
     dp.message.register(cmd_pay, Command('pay'))
     dp.message.register(cmd_referrals, Command('referrals'))
     dp.message.register(cmd_promo, Command('promo'))
+    dp.message.register(cmd_support, Command('support'))
     dp.message.register(cmd_info, Command('info'))
 
     # Reply-кнопки — матчинг по тексту (во всех языках сразу), только вне FSM-состояний
