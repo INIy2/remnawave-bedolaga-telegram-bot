@@ -1936,6 +1936,9 @@ class User(Base):
     yandex_id = Column(String(255), unique=True, nullable=True, index=True)
     discord_id = Column(String(255), unique=True, nullable=True, index=True)
     vk_id = Column(BigInteger, unique=True, nullable=True, index=True)
+    # Когда выдан бонус за привязку Telegram. Бонус разовый: без этой отметки
+    # его можно было бы собирать бесконечно, отвязывая и привязывая аккаунт.
+    telegram_link_bonus_granted_at = Column(AwareDateTime(), nullable=True)
     broadcasts = relationship('BroadcastHistory', back_populates='admin')
     referrals = relationship(
         'User', backref='referrer', remote_side=[id], foreign_keys='User.referred_by_id', post_update=True

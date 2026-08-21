@@ -33,6 +33,7 @@ from app.services.account_merge_service import (
     flush_remnawave_deletions,
     get_merge_preview,
 )
+from app.services.telegram_link_bonus_service import grant_telegram_link_bonus
 from app.utils.cache import RateLimitCache, TokenReplayCache
 
 from ..auth.merge_service import (
@@ -121,6 +122,12 @@ class LinkCallbackResponse(BaseModel):
     message: str | None = None
     merge_required: bool = False
     merge_token: str | None = None
+    # Days granted for linking Telegram, so the cabinet can say so out loud.
+    # None when nothing was granted (already claimed, or another provider).
+    bonus_days: int | None = None
+    # True when those days came as part of a freshly started trial rather than
+    # as an extension — the cabinet words the two cases differently.
+    trial_started: bool = False
 
 
 class UnlinkResponse(BaseModel):
@@ -696,7 +703,18 @@ async def link_telegram(
             user_id=user.id,
             error=resync_error,
         )
-    return LinkCallbackResponse(success=True, message='linked')
+
+    # Bonus days for linking. Runs after the link is committed, and swallows its
+    # own failures — a link that worked must not report an error because the
+    # reward didn't go through.
+    bonus = await grant_telegram_link_bonus(db, user)
+
+    return LinkCallbackResponse(
+        success=True,
+        message='linked',
+        bonus_days=bonus['bonus_days'] if bonus else None,
+        trial_started=bool(bonus and bonus['trial_started']),
+    )
 
 
 # ---------------------------------------------------------------------------
