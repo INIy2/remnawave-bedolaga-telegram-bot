@@ -672,7 +672,15 @@ def get_main_menu_keyboard(
     row_info: list[InlineKeyboardButton] = []
     site_url = (settings.MAIN_MENU_SITE_URL or '').strip()
     if site_url:
-        row_info.append(InlineKeyboardButton(text=texts.t('MENU_MAIN_SITE', 'Сайт'), url=site_url))
+        # WebApp, а не обычная ссылка: кабинет открывается внутри Telegram и логинит
+        # сам по initData, без экрана входа. Это главное меню — оно бывает только в
+        # личке, а именно там web_app-кнопки и работают (в группах они запрещены).
+        row_info.append(
+            InlineKeyboardButton(
+                text=texts.t('MENU_MAIN_SITE', 'Сайт'),
+                web_app=types.WebAppInfo(url=site_url),
+            )
+        )
     row_info.append(InlineKeyboardButton(text=texts.t('MENU_MAIN_INFO', 'Инфо'), callback_data='menu_info'))
     keyboard.append(row_info)
 

@@ -927,8 +927,9 @@ class Settings(BaseSettings):
     ETOPLATEZHI_CARD_DISPLAY_NAME: str = 'Карта (Etoplatezhi)'
 
     MAIN_MENU_MODE: str = 'default'  # 'default' | 'cabinet'
-    # URL кнопки "🌐 Сайт" в главном меню (обычная url-кнопка, открывает браузер).
-    # Пусто → кнопка не показывается. Позже можно заменить на WebApp-кнопку.
+    # URL кнопки "🌐 Сайт" в главном меню. Открывается как Telegram Mini App
+    # (web_app-кнопка), поэтому кабинет логинит пользователя сам по initData.
+    # Пусто → кнопка не показывается.
     MAIN_MENU_SITE_URL: str = 'https://cabinetipn.duckdns.org'
     # FreekVPN: внешние ссылки на юридические документы (telegra.ph, Instant View).
     # Пусто → соответствующий пункт скрыт в инфо-экране «Помощь и контакты».
