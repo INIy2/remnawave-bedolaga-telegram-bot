@@ -66,6 +66,7 @@ from app.handlers.channel_member import register_handlers as register_channel_me
 from app.handlers.gift_activation import register_handlers as register_gift_activation_handlers
 from app.handlers.stars_payments import register_stars_handlers
 from app.middlewares.auth import AuthMiddleware
+from app.middlewares.banner import BannerMiddleware
 from app.middlewares.blacklist import BlacklistMiddleware
 from app.middlewares.button_stats import ButtonStatsMiddleware
 from app.middlewares.chat_type_filter import ChatTypeFilterMiddleware
@@ -139,6 +140,10 @@ async def setup_bot() -> tuple[Bot, Dispatcher]:
     dp.message.middleware(ContextVarsMiddleware())
     dp.callback_query.middleware(ContextVarsMiddleware())
     dp.pre_checkout_query.middleware(ContextVarsMiddleware())
+    # Раньше остальных: раздел должен быть в контексте к моменту, когда любой
+    # хендлер начнёт рисовать экран.
+    dp.message.middleware(BannerMiddleware())
+    dp.callback_query.middleware(BannerMiddleware())
     chat_type_filter = ChatTypeFilterMiddleware()
     dp.message.middleware(chat_type_filter)
     dp.callback_query.middleware(chat_type_filter)

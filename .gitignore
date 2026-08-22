@@ -44,6 +44,10 @@
 !docs/**
 !assets/
 !assets/**
+# Баннеры разделов: монтируются как ./banners:/app/banners:ro, поэтому должны
+# доезжать до сервера вместе с кодом.
+!banners/
+!banners/**
 !locales/
 !locales/**
 !.github/

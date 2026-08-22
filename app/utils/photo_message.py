@@ -9,7 +9,6 @@ from aiogram.types import InaccessibleMessage, InputMediaPhoto
 from app.config import settings
 
 from .message_patch import (
-    LOGO_PATH,
     _cache_logo_file_id,
     append_privacy_hint,
     caption_exceeds_telegram_limit,
@@ -119,9 +118,12 @@ async def edit_or_answer_photo(
     # Если сообщение недоступно, отправляем новое сообщение
     if isinstance(callback.message, InaccessibleMessage):
         try:
-            if settings.ENABLE_LOGO_MODE and LOGO_PATH.exists():
+            # Медиа спрашиваем напрямую: у раздела бывает свой баннер, даже когда
+            # общего логотипа на диске нет.
+            _media = get_logo_media() if settings.ENABLE_LOGO_MODE else None
+            if _media is not None:
                 result = await callback.message.answer_photo(
-                    photo=get_logo_media(),
+                    photo=_media,
                     caption=caption,
                     reply_markup=keyboard,
                     parse_mode=resolved_parse_mode,

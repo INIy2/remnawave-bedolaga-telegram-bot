@@ -294,9 +294,9 @@ class StartupNotificationService:
         Полностью best-effort: на любой ошибке тихо выходим, старт не блокируем.
         """
         try:
-            from app.utils.message_patch import _cache_logo_file_id, _logo_file_id, get_logo_media
+            from app.utils.message_patch import _cache_logo_file_id, get_logo_media, is_logo_cached
 
-            if _logo_file_id:
+            if is_logo_cached():
                 return True
 
             media = get_logo_media()

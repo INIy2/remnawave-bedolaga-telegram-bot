@@ -76,6 +76,10 @@ services:
       - ./uploads:/app/uploads:rw
       # Логотип для сообщений
       - ./vpn_logo.png:/app/vpn_logo.png:ro
+      # Баннеры разделов: main/payment/connect/referral/info/support .png.
+      # Монтируем папкой, а не по файлу: если файла нет на хосте, Docker создаёт
+      # на его месте пустую директорию и отправка картинки падает (баг #586617).
+      - ./banners:/app/banners:ro
     ports:
       # Слушаем только localhost: наружу API кабинета ходит через nginx
       # (sait.freekov.net/api → 127.0.0.1:8080). Публичный 0.0.0.0:8080 отдавал

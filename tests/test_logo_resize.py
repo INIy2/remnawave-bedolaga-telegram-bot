@@ -101,8 +101,8 @@ async def test_get_logo_media_uses_resized_copy(tmp_path: Path, monkeypatch) -> 
 
     monkeypatch.setattr(message_patch, 'LOGO_PATH', src)
     monkeypatch.setattr(message_patch, '_logo_path_valid', True)
-    monkeypatch.setattr(message_patch, '_logo_file_id', None)
-    monkeypatch.setattr(message_patch, '_logo_send_path', None)
+    monkeypatch.setattr(message_patch, '_file_id_cache', {})
+    monkeypatch.setattr(message_patch, '_send_path_cache', {})
 
     media = message_patch.get_logo_media()
     assert media is not None

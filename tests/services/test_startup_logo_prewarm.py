@@ -30,7 +30,7 @@ def _service(bot, chat_id=-100123, topic_id=None) -> StartupNotificationService:
 
 
 async def test_prewarm_caches_file_id_and_deletes_message(monkeypatch):
-    monkeypatch.setattr(mp, '_logo_file_id', None, raising=False)
+    monkeypatch.setattr(mp, '_file_id_cache', {}, raising=False)
     monkeypatch.setattr(mp, 'get_logo_media', lambda: object())  # non-str, non-None stub (FSInputFile-like)
 
     bot = MagicMock()
@@ -40,13 +40,13 @@ async def test_prewarm_caches_file_id_and_deletes_message(monkeypatch):
     ok = await _service(bot).prewarm_logo()
 
     assert ok is True
-    assert mp._logo_file_id == 'FID123'
+    assert mp._file_id_cache[mp._DEFAULT_KEY] == 'FID123'
     bot.send_photo.assert_awaited_once()
     bot.delete_message.assert_awaited_once()
 
 
 async def test_prewarm_skips_when_already_cached(monkeypatch):
-    monkeypatch.setattr(mp, '_logo_file_id', 'ALREADY', raising=False)
+    monkeypatch.setattr(mp, '_file_id_cache', {mp._DEFAULT_KEY: 'ALREADY'}, raising=False)
     bot = MagicMock()
     bot.send_photo = AsyncMock()
 
@@ -57,7 +57,7 @@ async def test_prewarm_skips_when_already_cached(monkeypatch):
 
 
 async def test_prewarm_no_target_chat_skips(monkeypatch):
-    monkeypatch.setattr(mp, '_logo_file_id', None, raising=False)
+    monkeypatch.setattr(mp, '_file_id_cache', {}, raising=False)
     monkeypatch.setattr(mp, 'get_logo_media', lambda: object())
     monkeypatch.setattr(settings, 'ADMIN_IDS', '')  # no admin fallback either
     bot = MagicMock()
@@ -70,7 +70,7 @@ async def test_prewarm_no_target_chat_skips(monkeypatch):
 
 
 async def test_prewarm_is_best_effort_on_timeout(monkeypatch):
-    monkeypatch.setattr(mp, '_logo_file_id', None, raising=False)
+    monkeypatch.setattr(mp, '_file_id_cache', {}, raising=False)
     monkeypatch.setattr(mp, 'get_logo_media', lambda: object())
     monkeypatch.setattr(settings, 'MONITORING_NOTIFICATION_SEND_TIMEOUT', 0.05)
 

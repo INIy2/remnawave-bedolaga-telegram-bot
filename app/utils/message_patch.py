@@ -60,7 +60,9 @@ _logo_path_valid = _validate_logo_path(LOGO_PATH)
 _LOGO_MAX_DIMENSION = 1280
 _LOGO_MAX_BYTES = 5 * 1024 * 1024  # 5 MB — give ourselves a margin under the 10 MB hard cap
 _LOGO_RESIZED_SUFFIX = '.bot_resized.png'
-_logo_send_path: Path | None = None  # filled lazily by _prepare_logo_for_send
+# Ключ — исходный путь картинки, значение — путь, который реально уходит в Telegram.
+# Словарь, а не одна переменная: у каждого раздела свой баннер (app/utils/banners.py).
+_send_path_cache: dict[Path, Path] = {}
 
 
 def _prepare_logo_for_send(path: Path) -> Path:
@@ -140,37 +142,67 @@ def caption_exceeds_telegram_limit(text: str | None) -> bool:
 
 _PRIVACY_RESTRICTED_CODE = 'BUTTON_USER_PRIVACY_RESTRICTED'
 
-# Кеш file_id логотипа: после первой загрузки Telegram возвращает file_id,
-# который можно переиспользовать без повторной загрузки файла (экономит 3-4 сек)
-_logo_file_id: str | None = None
+# Кеш file_id: после первой загрузки Telegram возвращает file_id, который можно
+# переиспользовать без повторной загрузки файла (экономит 3-4 сек). Ключ — раздел
+# (`main`, `payment`, …) либо _DEFAULT_KEY для обычного логотипа, чтобы баннер
+# одного раздела не подменял собой другой.
+_DEFAULT_KEY = '__logo__'
+_file_id_cache: dict[str, str] = {}
 
 
-def get_logo_media():
-    """Возвращает кешированный file_id или FSInputFile для логотипа.
+def _resolve_banner(key: str | None) -> tuple[str, Path | None]:
+    """Вернуть (ключ кеша, путь к картинке) для раздела.
 
-    Returns None if the logo file on disk is missing or a directory — callers
+    Ключ не передали — берём раздел текущего апдейта из ContextVar. Файла раздела
+    нет на диске — молча откатываемся на обычный логотип, поэтому код можно
+    выкатывать до того, как баннеры окажутся на сервере.
+    """
+    from app.utils.banners import banner_path, get_current_banner
+
+    resolved = key if key is not None else get_current_banner()
+    path = banner_path(resolved)
+    if path is not None:
+        return resolved, path
+    return _DEFAULT_KEY, (LOGO_PATH if _logo_path_valid else None)
+
+
+def get_logo_media(key: str | None = None):
+    """Возвращает кешированный file_id или FSInputFile для картинки раздела.
+
+    Returns None if the image on disk is missing or a directory — callers
     must fall back to text-only sends (see Telegram bug #586617).
 
     If the source file is too large or too high-resolution for Telegram, a
     cached resized copy is used instead (see Telegram bug #339184).
     """
-    if _logo_file_id:
-        return _logo_file_id
-    if not _logo_path_valid:
+    cache_key, path = _resolve_banner(key)
+    cached = _file_id_cache.get(cache_key)
+    if cached:
+        return cached
+    if path is None:
         return None
-    global _logo_send_path
-    if _logo_send_path is None:
-        _logo_send_path = _prepare_logo_for_send(LOGO_PATH)
-    return FSInputFile(_logo_send_path)
+    send_path = _send_path_cache.get(path)
+    if send_path is None:
+        send_path = _prepare_logo_for_send(path)
+        _send_path_cache[path] = send_path
+    return FSInputFile(send_path)
 
 
-def _cache_logo_file_id(result: Message | None) -> None:
-    """Извлекает и кеширует file_id логотипа из ответа Telegram."""
-    global _logo_file_id
-    if _logo_file_id or result is None:
+def _cache_logo_file_id(result: Message | None, key: str | None = None) -> None:
+    """Извлекает и кеширует file_id картинки из ответа Telegram."""
+    if result is None:
+        return
+    cache_key, _ = _resolve_banner(key)
+    if cache_key in _file_id_cache:
         return
     if hasattr(result, 'photo') and result.photo:
-        _logo_file_id = result.photo[-1].file_id
+        _file_id_cache[cache_key] = result.photo[-1].file_id
+
+
+def is_logo_cached(key: str | None = None) -> bool:
+    """Уже ли получен file_id для этой картинки (используется при прогреве на старте)."""
+    cache_key, _ = _resolve_banner(key)
+    return cache_key in _file_id_cache
 
 
 _TOPIC_REQUIRED_ERRORS = (
@@ -286,9 +318,12 @@ async def _answer_with_photo(self: Message, text: str = None, **kwargs):
         pass
     language = _get_language(self)
 
-    if LOGO_PATH.exists():
+    # Спрашиваем медиа, а не наличие LOGO_PATH: у раздела может быть свой баннер,
+    # даже когда общий логотип не завезли.
+    _media = get_logo_media()
+    if _media is not None:
         try:
-            result = await self.answer_photo(get_logo_media(), caption=text, **kwargs)
+            result = await self.answer_photo(_media, caption=text, **kwargs)
             _cache_logo_file_id(result)
             return result
         except TelegramBadRequest as error:
@@ -365,10 +400,7 @@ async def _edit_with_photo(self: Message, text: str, **kwargs):
                 return await _text_answer(self, text, **kwargs)
         except Exception:
             pass
-        if LOGO_PATH.exists():
-            media = get_logo_media()
-        else:
-            media = self.photo[-1].file_id
+        media = get_logo_media() or self.photo[-1].file_id
         media_kwargs = {'media': media, 'caption': text}
         edit_kwargs = dict(kwargs)
         if 'parse_mode' in edit_kwargs:

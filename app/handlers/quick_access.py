@@ -150,10 +150,11 @@ class _MessageAsCallback:
 
 
 async def _open_via_adapter(source_message, bot, handler, **kwargs) -> None:
-    from app.utils.message_patch import LOGO_PATH, get_logo_media
+    from app.utils.message_patch import get_logo_media
 
-    if settings.ENABLE_LOGO_MODE and LOGO_PATH.exists():
-        placeholder = await source_message.answer_photo(get_logo_media(), caption='…')
+    media = get_logo_media() if settings.ENABLE_LOGO_MODE else None
+    if media is not None:
+        placeholder = await source_message.answer_photo(media, caption='…')
     else:
         placeholder = await source_message.answer('…')
 
