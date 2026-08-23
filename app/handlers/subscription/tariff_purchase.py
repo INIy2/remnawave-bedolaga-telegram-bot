@@ -896,35 +896,25 @@ async def show_tariffs_list(
         await callback.answer()
         return
 
-    # FreekVPN: если тариф ровно один и он обычный (фиксированные периоды) — сразу
-    # показываем экран выбора срока (описание тарифа + кнопки «период — цена»),
-    # минуя список из одной карточки. Модель «один тариф, разные сроки», как в Sota VPN.
-    # Исключение (из апстрима): в мультитарифе тариф уже куплен — тогда показываем
-    # список, где он помечен галочкой, иначе экран выглядел бы мёртвым.
+    # FreekVPN: тариф ровно один — сразу к выбору срока, минуя список из одной
+    # карточки (модель «один тариф, разные сроки», как в Sota VPN). Раньше это был
+    # свой блок, но `_proceed_with_selected_tariff(skip_selection=True)` делает то
+    # же самое — тот же экран периодов и «назад» в главное меню — и вдобавок умеет
+    # суточные и кастомные тарифы, на которых наш блок молча проваливался в список.
+    #
+    # Кроме случая, когда покупать нечего: в мультитарифе на уже активном тарифе
+    # `_proceed_with_selected_tariff` только показывает всплывающее уведомление и
+    # выходит, ничего не перерисовывая, — кнопка выглядела бы мёртвой. Тогда
+    # показываем список: там тариф помечен галочкой и понятно, почему.
     if len(tariffs) == 1:
-        only_tariff = tariffs[0]
         _already_owned = False
         if settings.is_multi_tariff_enabled():
             from app.database.crud.subscription import get_active_subscriptions_by_user_id
 
             _active = await get_active_subscriptions_by_user_id(db, db_user.id)
-            _already_owned = any(s.tariff_id == only_tariff.id and not s.is_trial for s in _active)
-        is_simple_periodic = (
-            not getattr(only_tariff, 'is_daily', False)
-            and not only_tariff.can_purchase_custom_days()
-            and not only_tariff.can_purchase_custom_traffic()
-            and bool(only_tariff.period_prices)
-        )
-        if is_simple_periodic and not _already_owned:
-            await state.update_data(selected_tariff_id=only_tariff.id)
-            await callback.message.edit_text(
-                format_tariff_info_for_user(only_tariff, db_user.language),
-                reply_markup=get_tariff_periods_keyboard(
-                    only_tariff, db_user.language, db_user=db_user, back_callback='back_to_menu'
-                ),
-                parse_mode='HTML',
-            )
-            await callback.answer()
+            _already_owned = any(s.tariff_id == tariffs[0].id and not s.is_trial for s in _active)
+        if not _already_owned:
+            await _proceed_with_selected_tariff(callback, db_user, db, state, tariffs[0].id, skip_selection=True)
             return
 
     # В мульти-тарифе определяем какие тарифы уже куплены

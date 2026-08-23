@@ -107,6 +107,9 @@ async def test_preview_uses_engine_price_with_extra_devices(monkeypatch):
         rendered = callback.message.edit_text.await_args.args[0]
 
         # Превью обязано отбить по балансу с движковой ценой (100 + 50 = 150 ₽),
-        # а не показать «Подтверждение покупки» со 100 ₽ и «После оплаты: 0».
-        assert 'Недостаточно средств' in rendered
+        # а не показать экран подтверждения со 100 ₽ и «После оплаты: 0».
+        # Форк вместо апстримовского «Недостаточно средств» показывает прямую
+        # оплату недостающей суммы (c5864734), поэтому проверяем её признаки.
+        assert 'Выберите способ оплаты' in rendered
+        assert 'к оплате' in rendered
         assert '150' in rendered

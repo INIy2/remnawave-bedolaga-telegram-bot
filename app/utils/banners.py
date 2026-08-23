@@ -106,6 +106,8 @@ BANNER_RULES: tuple[tuple[str | None, tuple[str, ...]], ...] = (
             'saved_cards_list',
             'confirm_unlink_',
             'unlink_card_',
+            # СБП-автопродление Platega: привязка и её отмена — это оплата.
+            'sbp_recurring_',
             'pal24_method_',
             'platega_method_',
             'payment_methods_unavailable',

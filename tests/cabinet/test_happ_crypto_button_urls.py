@@ -8,7 +8,10 @@ naive substitution would produce ``happ://crypt4/happ://crypt5/...``.
 
 from __future__ import annotations
 
+import pytest
+
 from app.cabinet.routes.subscription_modules.status import _create_deep_link, _resolve_button_url
+from app.config import settings
 from app.handlers.subscription.common import create_deep_link as bot_create_deep_link, resolve_button_url
 
 
@@ -64,6 +67,13 @@ class TestCreateDeepLink:
 
 
 class TestBotCreateDeepLink:
+    # Оба теста проверяют сборку scheme-ссылки, а не https-обёртку над ней, поэтому
+    # редирект-шаблон гасим явно. Без этого они падают на любой установке, где
+    # HAPP_CRYPTOLINK_REDIRECT_TEMPLATE задан в .env (у нас — задан).
+    @pytest.fixture(autouse=True)
+    def _no_redirect_template(self, monkeypatch):
+        monkeypatch.setattr(settings, 'HAPP_CRYPTOLINK_REDIRECT_TEMPLATE', None)
+
     def test_crypt_scheme_with_crypt_payload_does_not_double_prefix(self):
         # In happ_cryptolink mode the bot passes the stored crypt link as the
         # subscription URL (get_display_subscription_link) — gluing the template

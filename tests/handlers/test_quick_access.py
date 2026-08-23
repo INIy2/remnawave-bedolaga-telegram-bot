@@ -2,22 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from aiogram.types import ReplyKeyboardMarkup
-
-from app.handlers.quick_access import get_quick_reply_keyboard
-
-
-def test_reply_keyboard_layout():
-    kb = get_quick_reply_keyboard('ru')
-    assert isinstance(kb, ReplyKeyboardMarkup)
-    assert kb.is_persistent is True
-    assert kb.resize_keyboard is True
-    texts = [[btn.text for btn in row] for row in kb.keyboard]
-    assert texts == [
-        ['Как подключиться?', 'Ввести промокод'],
-        ['Политика конфиденциальности', 'Пользовательское соглашение'],
-        ['Поддержка'],
-    ]
+from aiogram.types import ReplyKeyboardRemove
 
 
 def test_bot_commands_order_and_labels():
@@ -30,6 +15,7 @@ def test_bot_commands_order_and_labels():
         ('pay', 'Оплатить'),
         ('referrals', 'Рефералы'),
         ('promo', 'Ввести промокод'),
+        ('support', 'Поддержка'),
         ('info', 'Инфо'),
     ]
 
@@ -173,8 +159,10 @@ def test_register_handlers_wires_commands_and_reply_buttons():
 
     quick_access.register_handlers(dp)
 
-    # 5 команд (без /start — он в start.py) + 5 reply-кнопок = 10 регистраций
-    assert dp.message.register.call_count == 10
+    # 6 команд (без /start — он в start.py) + 5 reply-кнопок = 11 регистраций.
+    # Reply-хендлеры остались после отказа от клавиатуры: она ещё висит у тех,
+    # у кого её не успели снять, и нажатия должны продолжать работать.
+    assert dp.message.register.call_count == 11
 
 
 def test_reply_button_text_variants_covers_all_languages(monkeypatch):
@@ -249,80 +237,67 @@ def rk_cache(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_carrier_message_is_never_deleted(rk_cache):
-    """Главное: носитель клавиатуры остаётся в чате.
+async def test_keyboard_removed_once_and_carrier_deleted(rk_cache):
+    """Снятие идёт ровно один раз и убирает прежний носитель.
 
-    Раньше его удаляли сразу — клиент терял сообщение с разметкой и сбрасывал
-    клавиатуру при следующей пересинхронизации.
+    От постоянной reply-клавиатуры отказались (8abb36d6), но persistent-клавиатура
+    сама не исчезает — её надо явно снять. Прежний носитель удаляем: если он
+    моложе 48ч, это уже сбрасывает клавиатуру у клиента.
     """
-    from app.handlers.quick_access import RK_CARRIER_KEY, ensure_quick_reply_keyboard
+    from app.handlers.quick_access import RK_CARRIER_KEY, RK_REMOVED_KEY, remove_quick_reply_keyboard
 
-    cache = rk_cache(_FakeCache())
+    carrier_key = RK_CARRIER_KEY.format(user_id=44)
+    cache = rk_cache(_FakeCache(initial={carrier_key: 300}))
     bot = _rk_bot(message_id=500)
 
-    await ensure_quick_reply_keyboard(bot, chat_id=777, db_user=_rk_user())
+    await remove_quick_reply_keyboard(bot, chat_id=777, db_user=_rk_user())
 
-    bot.send_message.assert_awaited_once()
-    assert bot.send_message.await_args.kwargs['reply_markup'].is_persistent is True
-    bot.delete_message.assert_not_awaited()
-    assert cache.store[RK_CARRIER_KEY.format(user_id=44)] == 500
+    # Носитель удалён, и следом — техническое сообщение с ReplyKeyboardRemove.
+    assert [call.args for call in bot.delete_message.await_args_list] == [(777, 300), (777, 500)]
+    assert isinstance(bot.send_message.await_args.kwargs['reply_markup'], ReplyKeyboardRemove)
+    assert carrier_key not in cache.store
+    assert cache.store[RK_REMOVED_KEY.format(user_id=44)] == 1
 
 
 @pytest.mark.asyncio
-async def test_installed_only_once(rk_cache):
-    """Повторная установка запрещена: удалить прежний носитель мы всё равно не
-    сможем (deleteMessage — только моложе 48 часов), и «⌨️» копились бы в чате."""
-    from app.handlers.quick_access import ensure_quick_reply_keyboard
+async def test_removal_is_not_repeated(rk_cache):
+    """Повторный /start не должен слать «⌨️» снова — флаг уже стоит."""
+    from app.handlers.quick_access import RK_REMOVED_KEY, remove_quick_reply_keyboard
 
-    cache = rk_cache(_FakeCache())
-    bot = _rk_bot(message_id=500)
-    await ensure_quick_reply_keyboard(bot, chat_id=777, db_user=_rk_user())
+    rk_cache(_FakeCache(initial={RK_REMOVED_KEY.format(user_id=44): 1}))
+    bot = _rk_bot()
 
-    bot.send_message.reset_mock()
-    await ensure_quick_reply_keyboard(bot, chat_id=777, db_user=_rk_user())
+    await remove_quick_reply_keyboard(bot, chat_id=777, db_user=_rk_user())
 
     bot.send_message.assert_not_awaited()
     bot.delete_message.assert_not_awaited()
-    assert len(cache.store) == 1
 
 
 @pytest.mark.asyncio
-async def test_key_version_bump_reinstalls(rk_cache):
-    """Ключ прошлой (ломаной) установки не должен мешать поставить клавиатуру
-    заново — иначе фикс не доехал бы до тех, у кого она уже «стояла»."""
-    from app.handlers.quick_access import ensure_quick_reply_keyboard
-
-    rk_cache(_FakeCache(initial={'rk_installed:44': 1, 'rk_carrier_msg:44': 300}))
-    bot = _rk_bot(message_id=501)
-
-    await ensure_quick_reply_keyboard(bot, chat_id=777, db_user=_rk_user())
-
-    bot.send_message.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_no_carrier_spam_when_redis_down(rk_cache):
-    """Без Redis мы не помним id носителя — слать новый на каждый /start нельзя."""
-    from app.handlers.quick_access import ensure_quick_reply_keyboard
+async def test_no_removal_spam_when_redis_down(rk_cache):
+    """Без Redis флаг не запоминается — слать ReplyKeyboardRemove на КАЖДЫЙ
+    /start нельзя, поэтому выходим молча."""
+    from app.handlers.quick_access import remove_quick_reply_keyboard
 
     rk_cache(_FakeCache(connected=False))
     bot = _rk_bot()
 
-    await ensure_quick_reply_keyboard(bot, chat_id=777, db_user=_rk_user())
+    await remove_quick_reply_keyboard(bot, chat_id=777, db_user=_rk_user())
 
     bot.send_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_key_released_when_send_fails(rk_cache):
-    """Упавшая отправка не должна оставить юзера без клавиатуры навсегда."""
-    from app.handlers.quick_access import RK_CARRIER_KEY, ensure_quick_reply_keyboard
+async def test_flag_released_when_send_fails(rk_cache):
+    """Упавшая отправка не должна оставить юзера с висящей клавиатурой навсегда:
+    флаг отпускаем, чтобы повторить на следующем /start."""
+    from app.handlers.quick_access import RK_REMOVED_KEY, remove_quick_reply_keyboard
 
     cache = rk_cache(_FakeCache())
     bot = _rk_bot()
     bot.send_message = AsyncMock(side_effect=RuntimeError('telegram down'))
 
     with pytest.raises(RuntimeError):
-        await ensure_quick_reply_keyboard(bot, chat_id=777, db_user=_rk_user())
+        await remove_quick_reply_keyboard(bot, chat_id=777, db_user=_rk_user())
 
-    assert RK_CARRIER_KEY.format(user_id=44) not in cache.store
+    assert RK_REMOVED_KEY.format(user_id=44) not in cache.store

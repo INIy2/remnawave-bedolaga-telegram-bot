@@ -17,7 +17,9 @@ def test_classic_topup_when_autopurchase_disabled(monkeypatch):
 
     assert 'balance_topup' in callbacks
     assert not any((c or '').startswith('topup_amount|') for c in callbacks)
-    assert 'tariff_select:7' in callbacks
+    # Форк: возврат ведёт к списку тарифов («← Другой тариф»), а не к экрану
+    # периодов выбранного тарифа, как в апстриме.
+    assert 'tariff_list' in callbacks
 
 
 def test_inlines_prefilled_payment_when_autopurchase_enabled(monkeypatch):
@@ -30,8 +32,8 @@ def test_inlines_prefilled_payment_when_autopurchase_enabled(monkeypatch):
     # прямая оплата ровно недостающей суммой, без промежуточного «Пополнить баланс»
     assert 'topup_amount|stars|50000' in callbacks
     assert 'balance_topup' not in callbacks
-    # возврат ведёт к выбору тарифа
-    assert 'tariff_select:7' in callbacks
+    # Форк: возврат ведёт к списку тарифов
+    assert 'tariff_list' in callbacks
 
 
 def test_classic_topup_when_missing_zero(monkeypatch):

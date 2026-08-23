@@ -23,35 +23,66 @@ def _menu_has_trial(markup) -> bool:
 
 
 # --- Surface 1: default sync keyboard -------------------------------------
+#
+# Форк заменил апстримовую кнопку ``menu_trial`` на свою «Получить N дней»
+# (``trial_activate``, коммит cb72a268), а весь гейт переехал в
+# ``is_trial_available_for_user``. Поэтому здесь проверяется гейт, а не
+# наличие ``menu_trial`` в разметке: его там больше нет никогда, и старая
+# формулировка теста проходила бы вхолостую.
 
 
-def test_keyboard_hides_trial_when_duration_zero():
-    from app.keyboards.inline import get_main_menu_keyboard
+def _trial_eligible_user():
+    """Юзер, которому триал положен по всем условиям, кроме настроек."""
+    user = MagicMock()
+    user.restriction_subscription = False
+    user.auth_type = 'telegram'
+    user.subscription = None
+    user.is_trial_already_used.return_value = False
+    return user
 
+
+def _menu_has_trial_activate(markup) -> bool:
+    return any(
+        getattr(btn, 'callback_data', None) == 'trial_activate' for row in markup.inline_keyboard for btn in row
+    )
+
+
+def test_trial_gate_closed_when_duration_zero():
+    from app.keyboards.inline import is_trial_available_for_user
+
+    user = _trial_eligible_user()
     orig = settings.TRIAL_DURATION_DAYS
     try:
         settings.TRIAL_DURATION_DAYS = 0
-        kb = get_main_menu_keyboard(has_had_paid_subscription=False, has_active_subscription=False)
-        assert not _menu_has_trial(kb)
+        assert is_trial_available_for_user(user) is False
 
         settings.TRIAL_DURATION_DAYS = 3
-        kb = get_main_menu_keyboard(has_had_paid_subscription=False, has_active_subscription=False)
-        assert _menu_has_trial(kb)
+        assert is_trial_available_for_user(user) is True
     finally:
         settings.TRIAL_DURATION_DAYS = orig
 
 
-def test_keyboard_hides_trial_when_disabled_for_all():
-    from app.keyboards.inline import get_main_menu_keyboard
+def test_trial_gate_closed_when_disabled_for_all():
+    from app.keyboards.inline import is_trial_available_for_user
 
+    user = _trial_eligible_user()
     orig_days, orig_disabled = settings.TRIAL_DURATION_DAYS, settings.TRIAL_DISABLED_FOR
     try:
         settings.TRIAL_DURATION_DAYS = 3
         settings.TRIAL_DISABLED_FOR = 'all'
-        kb = get_main_menu_keyboard(has_had_paid_subscription=False, has_active_subscription=False)
-        assert not _menu_has_trial(kb)
+        assert is_trial_available_for_user(user) is False
     finally:
         settings.TRIAL_DURATION_DAYS, settings.TRIAL_DISABLED_FOR = orig_days, orig_disabled
+
+
+def test_keyboard_renders_trial_button_only_when_gate_open():
+    from app.keyboards.inline import get_main_menu_keyboard
+
+    kb = get_main_menu_keyboard(has_had_paid_subscription=False, has_active_subscription=False)
+    assert not _menu_has_trial_activate(kb)
+
+    kb = get_main_menu_keyboard(has_had_paid_subscription=False, has_active_subscription=False, trial_available=True)
+    assert _menu_has_trial_activate(kb)
 
 
 # --- Surface 2: custom-menu constructor path ------------------------------
