@@ -1,6 +1,9 @@
 """Email service for sending verification and password reset emails."""
 
+import re
 import smtplib
+from email import encoders
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr, formatdate, make_msgid
@@ -42,6 +45,10 @@ class EmailService:
         return settings.SMTP_FROM_NAME
 
     @property
+    def reply_to(self) -> str:
+        return (settings.SMTP_REPLY_TO or '').strip()
+
+    @property
     def use_tls(self) -> bool:
         return settings.SMTP_USE_TLS
 
@@ -53,6 +60,32 @@ class EmailService:
     def is_configured(self) -> bool:
         """Check if SMTP is properly configured."""
         return settings.is_smtp_configured()
+
+    @staticmethod
+    def _html_to_plain_text(body_html: str) -> str:
+        """Грубая конвертация HTML в text/plain для multipart/alternative.
+
+        Блоки <style>/<script> удаляются ЦЕЛИКОМ до вырезания тегов: сами теги
+        регулярка убирала и раньше, а их содержимое (CSS/JS-правила) утекало в
+        текстовую версию письма перед основным текстом (#2974).
+
+        &amp; расшифровывается ПОСЛЕДНИМ: иначе "&amp;lt;" проходит двойную
+        расшифровку и превращается в "<" вместо "&lt;".
+        """
+        text = re.sub(r'<(style|script)\b[^>]*>.*?</\1\s*>', '', body_html, flags=re.DOTALL | re.IGNORECASE)
+        # Запасной проход для битого шаблона (кастомные письма из админки): открытый
+        # <style>/<script> без закрывающего тега иначе утёк бы телом CSS/JS в текст —
+        # срезаем висячий блок до конца ввода.
+        text = re.sub(r'<(style|script)\b[^>]*>.*', '', text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r'<[^>]+>', '', text)
+        text = text.replace('&nbsp;', ' ')
+        text = text.replace('&lt;', '<')
+        text = text.replace('&gt;', '>')
+        text = text.replace('&amp;', '&')
+        # После удаления блоков и тегов остаются простыни пустых строк —
+        # схлопываем, чтобы текст не начинался с десятков переносов.
+        text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
+        return text.strip()
 
     def _get_smtp_connection(self) -> smtplib.SMTP:
         """Create and return SMTP connection."""
@@ -81,6 +114,8 @@ class EmailService:
         subject: str,
         body_html: str,
         body_text: str | None = None,
+        attachments: list[tuple[str, bytes, str]] | None = None,
+        unsubscribe_url: str | None = None,
     ) -> bool:
         """
         Send an email.
@@ -90,6 +125,10 @@ class EmailService:
             subject: Email subject
             body_html: HTML body content
             body_text: Plain text body (optional, generated from HTML if not provided)
+            attachments: Optional list of (filename, content, mimetype) tuples
+            unsubscribe_url: One-click unsubscribe URL. Задаётся ТОЛЬКО для
+                маркетинговых писем — на транзакционных (код входа, чек об
+                оплате) List-Unsubscribe не ставят.
 
         Returns:
             True if email was sent successfully, False otherwise
@@ -108,31 +147,69 @@ class EmailService:
         subject = subject.replace('\n', '').replace('\r', '')
 
         try:
-            msg = MIMEMultipart('alternative')
+            # С вложениями письмо становится multipart/mixed: внутри него
+            # обычная alternative-пара text/html плюс файлы.
+            alternative = MIMEMultipart('alternative')
+            msg = MIMEMultipart('mixed') if attachments else alternative
             msg['Subject'] = subject
             safe_from_name = self.from_name.replace('\n', '').replace('\r', '') if self.from_name else ''
             safe_from_email = sender_email.replace('\n', '').replace('\r', '')
             msg['From'] = formataddr((safe_from_name, safe_from_email))
             msg['To'] = to_email
+            # Адрес из .env: перенос строки в нём дописал бы произвольный
+            # заголовок в письмо, поэтому кривое значение не чиним, а
+            # выбрасываем — письмо важнее обратного канала.
+            if reply_to := self.reply_to:
+                if any(ch in reply_to for ch in '\r\n') or '@' not in reply_to:
+                    logger.warning('Некорректный SMTP_REPLY_TO — заголовок Reply-To пропущен')
+                else:
+                    msg['Reply-To'] = formataddr((safe_from_name, reply_to))
+
             msg['Date'] = formatdate(localtime=False)
             msg['Message-ID'] = make_msgid(domain=safe_from_email.split('@')[-1])
 
+            # RFC 8058: пара List-Unsubscribe + List-Unsubscribe-Post — это то, из
+            # чего Gmail/Yahoo рисуют свою кнопку «Отписаться» рядом с адресом
+            # отправителя. Без -Post заголовок считается «старым» и кнопку дают
+            # не всегда.
+            if unsubscribe_url:
+                safe_unsubscribe = unsubscribe_url.strip()
+                # URL приходит из настроек/БД: перенос строки в нём дописал бы
+                # произвольный заголовок в письмо, поэтому такой URL не чиним, а
+                # выбрасываем целиком вместе с заголовками.
+                if any(ch in safe_unsubscribe for ch in '\r\n<>') or not safe_unsubscribe.startswith(
+                    ('http://', 'https://')
+                ):
+                    logger.warning('Некорректный unsubscribe_url — заголовки отписки пропущены')
+                else:
+                    from .email_unsubscribe import build_unsubscribe_mailto
+
+                    targets = [f'<{safe_unsubscribe}>']
+                    if mailto := build_unsubscribe_mailto():
+                        targets.append(f'<{mailto}>')
+                    msg['List-Unsubscribe'] = ', '.join(targets)
+                    msg['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click'
+
             # Plain text version
             if body_text is None:
-                # Simple HTML to text conversion
-                import re
-
-                body_text = re.sub(r'<[^>]+>', '', body_html)
-                body_text = body_text.replace('&nbsp;', ' ')
-                body_text = body_text.replace('&amp;', '&')
-                body_text = body_text.replace('&lt;', '<')
-                body_text = body_text.replace('&gt;', '>')
+                body_text = self._html_to_plain_text(body_html)
 
             part1 = MIMEText(body_text, 'plain', 'utf-8')
             part2 = MIMEText(body_html, 'html', 'utf-8')
 
-            msg.attach(part1)
-            msg.attach(part2)
+            alternative.attach(part1)
+            alternative.attach(part2)
+
+            if attachments:
+                msg.attach(alternative)
+                for filename, content, mimetype in attachments:
+                    maintype, _, subtype = (mimetype or 'application/octet-stream').partition('/')
+                    attachment_part = MIMEBase(maintype or 'application', subtype or 'octet-stream')
+                    attachment_part.set_payload(content)
+                    encoders.encode_base64(attachment_part)
+                    safe_filename = filename.replace('\n', '').replace('\r', '')
+                    attachment_part.add_header('Content-Disposition', 'attachment', filename=safe_filename)
+                    msg.attach(attachment_part)
 
             with self._get_smtp_connection() as smtp:
                 smtp.sendmail(safe_from_email, to_email, msg.as_string())

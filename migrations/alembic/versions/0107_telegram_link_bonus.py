@@ -1,7 +1,7 @@
 """users: mark when the Telegram-link bonus was granted
 
-Revision ID: 0095
-Revises: 0094
+Revision ID: 0107
+Revises: 0106
 Create Date: 2026-08-21
 
 Linking a Telegram account to a cabinet account grants bonus subscription days.
@@ -18,8 +18,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision: str = '0095'
-down_revision: Union[str, None] = '0094'
+revision: str = '0107'
+down_revision: Union[str, None] = '0106'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
