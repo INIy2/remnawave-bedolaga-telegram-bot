@@ -807,13 +807,18 @@ async def show_install_guide_devices(callback: types.CallbackQuery, db_user: Use
 
     from app.utils.connect_screen import build_connect_screen
     from app.utils.subscription_utils import (
+        get_copyable_subscription_link,
         get_display_subscription_link,
         get_happ_cryptolink_redirect_link,
         get_incy_redirect_link,
     )
 
     subscription = getattr(db_user, 'subscription', None)
+    # Две разные роли одной ссылки: в кнопки уходит deep link (в cryptolink-режиме
+    # это happ://crypt.../…), а под кнопками печатается копируемый текст — туда
+    # crypt нельзя, его не вставить руками.
     link = get_display_subscription_link(subscription) if subscription else None
+    copyable_link = get_copyable_subscription_link(subscription) if subscription else None
 
     caption, rows = build_connect_screen(
         texts,
@@ -822,7 +827,7 @@ async def show_install_guide_devices(callback: types.CallbackQuery, db_user: Use
         incy_url=settings.get_incy_download_link() or '',
         incy_android_url=settings.get_incy_download_link_android() or '',
         incy_windows_url=settings.get_incy_download_link_windows() or '',
-        subscription_link=link or '',
+        subscription_link=copyable_link or '',
         happ_redirect_url=(get_happ_cryptolink_redirect_link(link) or '') if link else '',
         incy_redirect_url=(get_incy_redirect_link(link) or '') if link else '',
     )

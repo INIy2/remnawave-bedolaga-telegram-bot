@@ -46,6 +46,12 @@ async def cleanup_duplicate_subscriptions(db: AsyncSession) -> int:
 
 
 def get_display_subscription_link(subscription: Subscription | None) -> str | None:
+    """Ссылка для КНОПКИ (deep link / web_app / редирект-шаблоны).
+
+    В режиме happ_cryptolink отдаёт `happ://crypt.../…` — его понимает приложение,
+    но человеку показывать его нельзя, для этого есть
+    ``get_copyable_subscription_link``.
+    """
     if not subscription:
         return None
 
@@ -56,6 +62,25 @@ def get_display_subscription_link(subscription: Subscription | None) -> str | No
         return crypto_link or base_link
 
     return base_link
+
+
+def get_copyable_subscription_link(subscription: Subscription | None) -> str | None:
+    """Ссылка, которую пользователь ВИДИТ и копирует руками.
+
+    Никогда не отдаёт `happ://crypt.../…`: это deep link для кнопки, а как текст
+    он выглядит километровым блобом, который нельзя ни прочитать, ни вставить в
+    браузер или в поле «добавить подписку».
+
+    Раньше разницы не было видно: Remnawave 2.8.0 удалил ручку шифрования
+    (`POST /api/system/tools/happ/encrypt`), `subscription_crypto_link` у всех
+    оставался пустым, и в cryptolink-режиме подставлялся обычный URL. Панель
+    3.0.0 снова отдаёт `happ.cryptoLink`, бот его сохраняет при продлении — и
+    сырой crypt полез в интерфейс.
+    """
+    if not subscription:
+        return None
+
+    return getattr(subscription, 'subscription_url', None)
 
 
 def _build_cryptolink_redirect_link(subscription_link: str, template: str) -> str:

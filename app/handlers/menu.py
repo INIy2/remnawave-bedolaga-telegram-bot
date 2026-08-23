@@ -1445,7 +1445,7 @@ async def _build_main_menu_status_card(user, texts, db: AsyncSession) -> str:
     Число ПОДКЛЮЧЁННЫХ устройств не показываем (только лимит): кэша в БД нет, а
     live-запрос к Remnawave на каждый рендер меню создаёт лишнюю нагрузку на панель.
     """
-    from app.utils.subscription_utils import get_display_subscription_link
+    from app.utils.subscription_utils import get_copyable_subscription_link
 
     subscription = getattr(user, 'subscription', None)
     now_utc = datetime.now(UTC)
@@ -1456,8 +1456,8 @@ async def _build_main_menu_status_card(user, texts, db: AsyncSession) -> str:
 
     lines: list[str] = [texts.t('MAIN_MENU_ACCESS_HEADER', '<b>Ваш доступ к Freek VPN</b>'), '']
 
-    # Ссылка подключения
-    link = get_display_subscription_link(subscription) if subscription else None
+    # Ссылка подключения — показываем текстом, поэтому обычный URL, а не crypt-блоб
+    link = get_copyable_subscription_link(subscription) if subscription else None
     if link and not settings.should_hide_subscription_link():
         lines.append(texts.t('MAIN_MENU_CONNECT_LINK_TITLE', '<b>Ссылка для подключения:</b>'))
         lines.append(link)
