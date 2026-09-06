@@ -31,6 +31,7 @@ from app.keyboards.inline import (
     get_back_keyboard,
     get_language_selection_keyboard,
     get_main_menu_keyboard_async,
+    get_onboarding_gate_keyboard,
     get_post_registration_keyboard,
     get_privacy_policy_keyboard,
     get_rules_keyboard,
@@ -41,6 +42,7 @@ from app.middlewares.channel_checker import (
     delete_pending_payload_from_redis,
     get_pending_payload_from_redis,
 )
+from app.services import legal_consent_service
 from app.services.admin_notification_service import AdminNotificationService
 from app.services.campaign_service import AdvertisingCampaignService
 from app.services.channel_subscription_service import channel_subscription_service
@@ -950,6 +952,104 @@ async def _prompt_language_selection(message: types.Message, state: FSMContext) 
     )
 
 
+# FreekVPN: документы, под которыми человек ставит галочку в онбординге. Названия
+# совпадают с журналом согласий кабинета (legal_consents), чтобы согласие из бота и
+# из кабинета читались одним запросом.
+ONBOARDING_CONSENT_DOCUMENTS = ('privacy_policy', 'user_agreement')
+
+
+def _onboarding_gate_documents() -> list[str]:
+    """Документы, которые реально можно прочитать по ссылке из экрана-гейта.
+
+    Требовать согласие с тем, чего человеку не показали, нельзя, поэтому пустой
+    URL документа выбрасывает его и из кнопок, и из журнала согласий.
+    """
+    documents = []
+    if (settings.PRIVACY_POLICY_URL or '').strip():
+        documents.append('privacy_policy')
+    if (settings.USER_AGREEMENT_URL or '').strip():
+        documents.append('user_agreement')
+    return documents
+
+
+async def _get_onboarding_gate_channels(telegram_id: int, bot: Bot) -> list[dict]:
+    """Каналы гейта со статусом подписки. Сбой проверки не должен ломать онбординг."""
+    if not channel_subscription_service.bot:
+        channel_subscription_service.bot = bot
+    try:
+        return await channel_subscription_service.get_channels_with_status(telegram_id)
+    except Exception as error:
+        logger.error('Не удалось получить статус подписки на каналы для гейта', error=error)
+        return []
+
+
+async def _show_onboarding_gate(
+    target_message: types.Message,
+    telegram_id: int,
+    state: FSMContext,
+    language: str,
+) -> bool:
+    """Показывает экран «подпишись на канал и прими документы» перед регистрацией.
+
+    Возвращает True, если экран показан (регистрация приостановлена до нажатия
+    кнопки согласия). Если гейт выключен или показывать нечего — False, и
+    регистрация идёт дальше как раньше.
+    """
+    if not settings.ONBOARDING_GATE_ENABLED:
+        return False
+
+    data = await state.get_data() or {}
+    if data.get('onboarding_gate_passed'):
+        return False
+
+    texts = get_texts(language)
+    channels = await _get_onboarding_gate_channels(telegram_id, target_message.bot)
+    documents = _onboarding_gate_documents()
+
+    if not channels and not documents:
+        # Ни канала в админке, ни ссылок на документы — гейт превратился бы в
+        # экран с одной кнопкой «принимаю» ни подо что. Пропускаем.
+        logger.info('⚙️ GATE: нечего показывать (нет каналов и документов), пропускаем')
+        return False
+
+    gate_text = texts.t(
+        'ONBOARDING_GATE_TEXT',
+        'Перед стартом подпишись на наш канал и открой документы ниже. '
+        'Кнопка «Подписался и принимаю» подтверждает подписку на канал и согласие '
+        'с политикой конфиденциальности и пользовательским соглашением.',
+    )
+    keyboard = get_onboarding_gate_keyboard(channels, language)
+
+    try:
+        await target_message.answer(gate_text, reply_markup=keyboard, parse_mode='HTML')
+    except TelegramForbiddenError:
+        logger.warning('⚠️ GATE: пользователь заблокировал бота, экран не отправлен', telegram_id=telegram_id)
+        return True
+    except Exception as error:
+        # Экран не дошёл — пускать дальше нельзя (иначе гейт молча обходится),
+        # но и вставать в его состояние тоже: пользователь останется без кнопок.
+        logger.error('Ошибка при показе экрана-гейта онбординга', error=error)
+        return True
+
+    await state.set_state(RegistrationStates.waiting_for_onboarding_gate)
+    logger.info('🚧 GATE: экран подписки и документов показан', telegram_id=telegram_id)
+    return True
+
+
+async def _record_onboarding_consent(db: AsyncSession, state: FSMContext, user) -> None:
+    """Пишет в журнал согласие, поставленное на экране-гейте.
+
+    Галочка ценна только доказательством, поэтому она переживает FSM: записываем
+    сразу после создания пользователя, до state.clear().
+    """
+    data = await state.get_data() or {}
+    documents = data.get('onboarding_consent_documents') or []
+    if not documents:
+        return
+    await legal_consent_service.record_consent(db, user, list(documents), source='bot_registration')
+    logger.info('📝 GATE: согласие с документами записано', user_id=user.id, documents=documents)
+
+
 async def _continue_registration_after_language(
     *,
     message: types.Message | None,
@@ -964,6 +1064,10 @@ async def _continue_registration_after_language(
     target_message = callback.message if callback else message
     if not target_message:
         logger.warning('⚠️ LANGUAGE: Нет доступного сообщения для продолжения регистрации')
+        return
+
+    telegram_id = callback.from_user.id if callback else message.from_user.id
+    if await _show_onboarding_gate(target_message, telegram_id, state, language):
         return
 
     async def _complete_registration_wrapper():
@@ -1773,6 +1877,64 @@ async def _continue_registration_after_rules(
             await complete_registration_from_callback(callback, state, db)
 
 
+async def process_onboarding_gate_accept(callback: types.CallbackQuery, state: FSMContext, db: AsyncSession):
+    """Кнопка «Подписался и принимаю» на экране-гейте онбординга.
+
+    Согласие с документами принимается на слово (нажатие и есть галочка), а вот
+    подписка на канал перепроверяется через Telegram — иначе кнопка пропускала бы
+    любого, кто её просто нажал.
+    """
+    data = await state.get_data() or {}
+    language = data.get('language', DEFAULT_LANGUAGE)
+    texts = get_texts(language)
+
+    try:
+        await channel_subscription_service.invalidate_user_cache(callback.from_user.id)
+    except Exception as error:
+        logger.warning('⚠️ GATE: не удалось сбросить кэш подписки', error=error)
+
+    channels = await _get_onboarding_gate_channels(callback.from_user.id, callback.bot)
+    unsubscribed = [ch for ch in channels if not ch.get('is_subscribed', False)]
+
+    if unsubscribed:
+        await callback.answer(
+            texts.t(
+                'ONBOARDING_GATE_NOT_SUBSCRIBED',
+                'Не вижу подписки на канал. Подпишись и нажми кнопку ещё раз.',
+            ),
+            show_alert=True,
+        )
+        try:
+            await callback.message.edit_reply_markup(reply_markup=get_onboarding_gate_keyboard(channels, language))
+        except TelegramBadRequest:
+            # Кнопки не изменились — Telegram отвечает "message is not modified".
+            pass
+        except Exception as error:
+            logger.warning('⚠️ GATE: не удалось обновить клавиатуру гейта', error=error)
+        return
+
+    await state.update_data(
+        onboarding_gate_passed=True,
+        onboarding_consent_documents=_onboarding_gate_documents(),
+    )
+    await callback.answer()
+
+    # Гейт пройден — снимаем с него кнопки, чтобы под приветствием не осталось
+    # живой кнопки «принимаю» от предыдущего шага.
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception as error:
+        logger.debug('GATE: не удалось снять клавиатуру пройденного гейта', error=error)
+    logger.info('✅ GATE: пройден, продолжаем регистрацию', telegram_id=callback.from_user.id)
+
+    await _continue_registration_after_language(
+        message=None,
+        callback=callback,
+        state=state,
+        db=db,
+    )
+
+
 async def process_rules_accept(callback: types.CallbackQuery, state: FSMContext, db: AsyncSession):
     """
     Обрабатывает принятие или отклонение правил пользователем.
@@ -2271,6 +2433,7 @@ async def complete_registration_from_callback(callback: types.CallbackQuery, sta
     await _activate_pending_gift_after_registration(db, state, user, callback.message.answer)
     await _redeem_pending_coupon(db, state, user, callback.message.answer)
     await _persist_pending_subid_after_registration(db, state, user)
+    await _record_onboarding_consent(db, state, user)
     # Gift/coupon may have just created a subscription — reload it, otherwise the
     # stale empty list below offers the trial on top of the granted subscription
     try:
@@ -2656,6 +2819,7 @@ async def complete_registration(message: types.Message, state: FSMContext, db: A
     await _activate_pending_gift_after_registration(db, state, user, message.answer)
     await _redeem_pending_coupon(db, state, user, message.answer)
     await _persist_pending_subid_after_registration(db, state, user)
+    await _record_onboarding_consent(db, state, user)
     # Gift/coupon may have just created a subscription — reload it, otherwise the
     # stale empty list below offers the trial on top of the granted subscription
     try:
@@ -3306,6 +3470,13 @@ def register_handlers(dp: Dispatcher):
 
     dp.message.register(cmd_start, Command('start'))
     logger.debug('Зарегистрирован cmd_start')
+
+    dp.callback_query.register(
+        process_onboarding_gate_accept,
+        F.data == 'onboarding_gate_accept',
+        StateFilter(RegistrationStates.waiting_for_onboarding_gate),
+    )
+    logger.debug('Зарегистрирован process_onboarding_gate_accept')
 
     dp.callback_query.register(
         process_rules_accept,

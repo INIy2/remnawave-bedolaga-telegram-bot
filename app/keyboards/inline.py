@@ -276,14 +276,76 @@ def get_channel_sub_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
+def get_onboarding_gate_keyboard(
+    channels: list[dict] | None = None,
+    language: str = DEFAULT_LANGUAGE,
+) -> InlineKeyboardMarkup:
+    """Экран-гейт онбординга: подписка на канал + ссылки на документы + согласие.
+
+    Каналы приходят из «Обязательных каналов» админки, ссылки на документы — из
+    PRIVACY_POLICY_URL / USER_AGREEMENT_URL. Чего нет — того и кнопки нет, чтобы
+    не показывать пустую кнопку в самом первом экране бота.
+    """
+    texts = get_texts(language)
+    buttons: list[list[InlineKeyboardButton]] = []
+
+    for ch in channels or []:
+        link = ch.get('channel_link')
+        if not link:
+            continue
+        title = ch.get('title')
+        label = (
+            f'📢 {title}'
+            if title
+            else texts.t('ONBOARDING_GATE_CHANNEL_BUTTON', '📢 Подписаться на канал')
+        )
+        buttons.append([InlineKeyboardButton(text=label, url=link, style='primary')])
+
+    privacy_url = (settings.PRIVACY_POLICY_URL or '').strip()
+    agreement_url = (settings.USER_AGREEMENT_URL or '').strip()
+    documents_row: list[InlineKeyboardButton] = []
+    if privacy_url:
+        documents_row.append(
+            InlineKeyboardButton(
+                text=texts.t('ONBOARDING_GATE_PRIVACY_BUTTON', '🔒 Политика'),
+                url=privacy_url,
+            )
+        )
+    if agreement_url:
+        documents_row.append(
+            InlineKeyboardButton(
+                text=texts.t('ONBOARDING_GATE_AGREEMENT_BUTTON', '📄 Соглашение'),
+                url=agreement_url,
+            )
+        )
+    if documents_row:
+        buttons.append(documents_row)
+
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                text=texts.t('ONBOARDING_GATE_ACCEPT_BUTTON', '✅ Подписался и принимаю'),
+                callback_data='onboarding_gate_accept',
+                style='success',
+            )
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 def get_post_registration_keyboard(language: str = DEFAULT_LANGUAGE) -> InlineKeyboardMarkup:
     texts = get_texts(language)
     # FreekVPN: под приветствием ровно одна кнопка во всю ширину (активация триала).
+    # Число дней подставляется из TRIAL_DURATION_DAYS — в подписи оно жило числом
+    # и разъезжалось с настройкой при каждой смене длительности триала.
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=texts.t('POST_REGISTRATION_TRIAL_BUTTON', '🎁 Активировать 14 дней'),
+                    text=texts.t('POST_REGISTRATION_TRIAL_BUTTON', '🎁 Активировать {days} дней').format(
+                        days=settings.TRIAL_DURATION_DAYS
+                    ),
                     callback_data='trial_activate',
                 )
             ],

@@ -160,6 +160,7 @@ BANNER_RULES: tuple[tuple[str | None, tuple[str, ...]], ...] = (
             'privacy_policy_decline',
             'rules_accept',
             'rules_decline',
+            'onboarding_gate_accept',
         ),
     ),
     (

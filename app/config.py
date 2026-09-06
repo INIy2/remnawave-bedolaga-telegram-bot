@@ -159,6 +159,14 @@ class Settings(BaseSettings):
     CHANNEL_DISABLE_TRIAL_ON_UNSUBSCRIBE: bool = True
     CHANNEL_REQUIRED_FOR_ALL: bool = False
 
+    # FreekVPN: экран-гейт в онбординге — подписка на канал плюс подтверждение, что
+    # человек ознакомился с политикой и пользовательским соглашением. В отличие от
+    # CHANNEL_IS_REQUIRED_SUB (постоянный гейт на каждое действие, бьёт и по давним
+    # пользователям) этот шаг проходится один раз при регистрации, поэтому уже
+    # зарегистрированных он не трогает. Каналы берутся из «Обязательных каналов»
+    # админки; ссылки на документы — из PRIVACY_POLICY_URL / USER_AGREEMENT_URL.
+    ONBOARDING_GATE_ENABLED: bool = False
+
     DATABASE_URL: str | None = None
 
     POSTGRES_HOST: str = 'postgres'

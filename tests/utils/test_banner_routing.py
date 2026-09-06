@@ -46,6 +46,7 @@ CASES = [
     ('create_ticket', 'support'),
     ('menu_info', 'info'),
     ('rules_accept', 'info'),
+    ('onboarding_gate_accept', 'info'),
     ('language_select:en', 'info'),
     # Админка не должна утаскивать баннеры: admin_payment_check_ похож на оплату.
     ('admin_panel', None),

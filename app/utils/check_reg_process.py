@@ -6,12 +6,14 @@ from app.states import RegistrationStates
 def is_registration_process(event: TelegramObject, current_state: str | None) -> bool:
     registration_states = [
         RegistrationStates.waiting_for_language.state,
+        RegistrationStates.waiting_for_onboarding_gate.state,
         RegistrationStates.waiting_for_rules_accept.state,
         RegistrationStates.waiting_for_privacy_policy_accept.state,
         RegistrationStates.waiting_for_referral_code.state,
     ]
 
     registration_callbacks = [
+        'onboarding_gate_accept',
         'rules_accept',
         'rules_decline',
         'privacy_policy_accept',
